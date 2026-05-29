@@ -2,6 +2,22 @@ from transcoder.engine import discovery
 from transcoder.models import MediaItem, Exclusion
 
 
+def test_discover_sonarr_commits_in_batches(session, monkeypatch):
+    # With batch_size=1, discovery should commit per item (releasing the write
+    # lock) rather than once at the very end.
+    calls = {"n": 0}
+    real_commit = session.commit
+
+    def counting_commit():
+        calls["n"] += 1
+        return real_commit()
+
+    monkeypatch.setattr(session, "commit", counting_commit)
+    count = discovery.discover_sonarr(session, FakeSonarr(), scope="all", batch_size=1)
+    assert count == 2
+    assert calls["n"] >= 2  # batched commits, not a single end-of-scan commit
+
+
 class FakeSonarr:
     def get_all_series(self):
         return [{"id": 1, "title": "Show A"}]

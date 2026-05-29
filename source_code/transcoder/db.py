@@ -11,7 +11,10 @@ class Base(DeclarativeBase):
 def _enable_sqlite_pragmas(dbapi_conn, _record):
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("PRAGMA busy_timeout=5000")
+    # Wait (rather than erroring with "database is locked") when another writer
+    # holds the lock briefly. Writers serialize in SQLite; discovery commits in
+    # batches so any wait stays short in practice.
+    cur.execute("PRAGMA busy_timeout=15000")
     cur.close()
 
 
