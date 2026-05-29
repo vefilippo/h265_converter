@@ -1,3 +1,6 @@
 requests
 paramiko
 tqdm
+SQLAlchemy>=2.0
+pydantic-settings>=2.0
+pytest>=8.0
