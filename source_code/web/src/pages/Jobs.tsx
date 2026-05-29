@@ -1,0 +1,192 @@
+import { useState } from "react";
+import { useActions, useJobs } from "../hooks/queries";
+import type { Job } from "../api/types";
+import { Badge, jobStateVariant } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Dialog } from "../components/ui/dialog";
+import { Progress } from "../components/ui/progress";
+import { Spinner } from "../components/ui/spinner";
+import { Table, TBody, TD, TH, THead, TR } from "../components/ui/table";
+import { cn } from "../lib/cn";
+
+const STATE_OPTIONS = [
+  { value: "", label: "All" },
+  { value: "queued", label: "Queued" },
+  { value: "running", label: "Running" },
+  { value: "done", label: "Done" },
+  { value: "failed", label: "Failed" },
+  { value: "skipped_larger", label: "Skipped Larger" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+function mb(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return (n / 1048576).toFixed(0) + " MB";
+}
+
+function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
+  return (
+    <Dialog open onClose={onClose} title={job.title ?? `Job #${job.id}`}>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <dt className="text-muted">Original Size</dt>
+        <dd className="font-mono">{mb(job.original_size)}</dd>
+
+        <dt className="text-muted">Output Size</dt>
+        <dd className="font-mono">{mb(job.output_size)}</dd>
+
+        <dt className="text-muted">Reduction</dt>
+        <dd className="font-mono">
+          {job.reduction_pct != null ? `${job.reduction_pct.toFixed(1)}%` : "—"}
+        </dd>
+
+        <dt className="text-muted">Preset</dt>
+        <dd>{job.preset ?? "—"}</dd>
+
+        {job.output_filename && (
+          <>
+            <dt className="text-muted">Output File</dt>
+            <dd className="font-mono break-all col-span-1">{job.output_filename}</dd>
+          </>
+        )}
+
+        {job.error_message && (
+          <>
+            <dt className="text-muted">Error</dt>
+            <dd className="text-state-failed col-span-1 break-all">{job.error_message}</dd>
+          </>
+        )}
+      </dl>
+    </Dialog>
+  );
+}
+
+export default function Jobs() {
+  const [stateFilter, setStateFilter] = useState("");
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
+
+  const { data, isLoading } = useJobs(stateFilter || undefined);
+  const actions = useActions();
+
+  const jobs = data?.items ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-2xl">Jobs</h1>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted">Filter:</span>
+          <div className="flex gap-1 flex-wrap">
+            {STATE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setStateFilter(opt.value)}
+                className={cn(
+                  "px-2 py-0.5 rounded-full text-xs font-medium transition-colors",
+                  stateFilter === opt.value
+                    ? "bg-accent text-accent-fg"
+                    : "bg-surface text-muted hover:text-fg"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="flex justify-center py-8">
+          <Spinner size="lg" />
+        </div>
+      )}
+
+      {!isLoading && jobs.length === 0 && (
+        <p className="text-muted text-sm py-8 text-center">No jobs</p>
+      )}
+
+      {!isLoading && jobs.length > 0 && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <Table>
+            <THead>
+              <TR>
+                <TH>Job ID</TH>
+                <TH>Title</TH>
+                <TH>State</TH>
+                <TH>Progress</TH>
+                <TH>Reduction</TH>
+                <TH>Actions</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {jobs.map((job) => (
+                <TR
+                  key={job.id}
+                  className="cursor-pointer"
+                  onClick={() => setDetailJob(job)}
+                >
+                  <TD className="font-mono text-muted">{job.id}</TD>
+                  <TD>{job.title ?? "—"}</TD>
+                  <TD>
+                    <Badge variant={jobStateVariant(job.state)}>{job.state}</Badge>
+                  </TD>
+                  <TD>
+                    {job.state === "running" ? (
+                      <div className="flex items-center gap-2 min-w-[100px]">
+                        <Progress value={job.progress} className="flex-1" />
+                        <span className="font-mono text-xs text-muted whitespace-nowrap">
+                          {job.progress}%
+                        </span>
+                      </div>
+                    ) : (
+                      <Badge variant={jobStateVariant(job.state)}>{job.state}</Badge>
+                    )}
+                  </TD>
+                  <TD className="font-mono">
+                    {job.reduction_pct != null ? `${job.reduction_pct.toFixed(1)}%` : "—"}
+                  </TD>
+                  <TD onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-1">
+                      {(job.state === "queued" || job.state === "running") && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => actions.cancel.mutate(job.id)}
+                          disabled={actions.cancel.isPending}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      {(job.state === "failed" ||
+                        job.state === "skipped_larger" ||
+                        job.state === "cancelled") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => actions.retry.mutate(job.id)}
+                          disabled={actions.retry.isPending}
+                        >
+                          Retry
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDetailJob(job)}
+                      >
+                        Details
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </div>
+      )}
+
+      {detailJob && (
+        <JobDetailDialog job={detailJob} onClose={() => setDetailJob(null)} />
+      )}
+    </div>
+  );
+}

@@ -37,3 +37,10 @@ excluded_movies.csv
 # OS
 Thumbs.db
 .DS_Store
+
+# Frontend
+source_code/web/node_modules/
+source_code/web/dist/
+source_code/web/*.tsbuildinfo
+source_code/web/vite.config.js
+source_code/web/vite.config.d.ts
