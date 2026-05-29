@@ -15,3 +15,10 @@ def test_settings_api_defaults():
     from transcoder.config import settings
     assert settings.API_PORT == 8765
     assert settings.API_HOST == "0.0.0.0"
+
+
+def test_settings_web_auth_defaults():
+    from transcoder.config import settings
+    assert settings.WEB_DIST == "web/dist"
+    assert settings.APP_PASSWORD  # provided by conftest env
+    assert settings.SECRET_KEY

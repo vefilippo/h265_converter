@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     SFTP_USERNAME: str
     SFTP_PASSWORD: str
     HANDBRAKE_CLI: str
+    APP_PASSWORD: str
+    SECRET_KEY: str
 
     # --- Defaults (overridable via .env) ---
     SFTP_PORT: int = 22
@@ -31,6 +33,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///transcoder.db"
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8765
+    WEB_DIST: str = "web/dist"
 
     # Docker path remap (host_root, docker_root)
     DOCKER_HOST_ROOT: str = "./out/"

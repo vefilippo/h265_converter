@@ -9,6 +9,8 @@ os.environ.setdefault("SFTP_HOST", "127.0.0.1")
 os.environ.setdefault("SFTP_USERNAME", "tester")
 os.environ.setdefault("SFTP_PASSWORD", "secret")
 os.environ.setdefault("HANDBRAKE_CLI", "HandBrakeCLI")
+os.environ.setdefault("APP_PASSWORD", "test-pass")
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
 
 import pytest
 from sqlalchemy import create_engine
