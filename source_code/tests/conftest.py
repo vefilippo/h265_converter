@@ -34,3 +34,6 @@ def session():
         yield s
     finally:
         s.close()
+
+
+from tests.api_conftest import api  # noqa: E402,F401  (re-export API fixture)

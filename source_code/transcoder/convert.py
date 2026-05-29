@@ -8,12 +8,16 @@ from transcoder.config import settings
 _PROGRESS_RE = re.compile(r"Encoding: .*?\s(\d{1,3})\.\d+ %")
 
 
+class TranscodeCancelled(Exception):
+    """Raised when a transcode is cancelled via its cancel_event."""
+
+
 def parse_handbrake_progress(line: str):
     match = _PROGRESS_RE.search(line)
     return int(match.group(1)) if match else None
 
 
-def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None):
+def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None, cancel_event=None):
     output_file = settings.OUTPUT_FOLDER + output_filename
 
     command = [
@@ -34,6 +38,9 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     )
 
     for line in process.stdout:
+        if cancel_event is not None and cancel_event.is_set():
+            process.kill()
+            raise TranscodeCancelled()
         pct = parse_handbrake_progress(line)
         if pct is not None and progress_cb is not None:
             try:

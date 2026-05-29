@@ -2,7 +2,7 @@ import os
 import re
 
 from transcoder.config import settings
-from transcoder.convert import convert_with_handbrake
+from transcoder.convert import convert_with_handbrake, TranscodeCancelled
 from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 from transcoder.sftp_client import download_file_via_sftp, upload_file_via_sftp
 
@@ -38,6 +38,7 @@ def process_one_job(
     job,
     clients,
     *,
+    cancel_event=None,
     download=download_file_via_sftp,
     upload=upload_file_via_sftp,
     convert=convert_with_handbrake,
@@ -70,7 +71,8 @@ def process_one_job(
             job.progress = pct
             session.commit()
 
-        output_file, exclude_flag = convert(tmp_file, out_name, job.preset, progress_cb=cb)
+        output_file, exclude_flag = convert(tmp_file, out_name, job.preset,
+                                            progress_cb=cb, cancel_event=cancel_event)
 
         if output_file is None:
             job.state = "failed"
@@ -97,6 +99,13 @@ def process_one_job(
             job.output_filename = out_name
             job.state = "done"
 
+        job.finished_at = utcnow()
+        session.commit()
+        return job
+
+    except TranscodeCancelled:
+        job.state = "cancelled"
+        job.error_message = "cancelled by user"
         job.finished_at = utcnow()
         session.commit()
         return job
