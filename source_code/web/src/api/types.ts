@@ -1,0 +1,23 @@
+export interface MediaItem {
+  id: number; source: string; external_id: string; title: string;
+  season: number | null; episode: number | null; year: number | null;
+  resolution: number; quality: string | null; languages: string | null;
+  codec: string | null; is_h265: boolean; eligibility: string;
+}
+export interface LibraryPage { total: number; items: MediaItem[]; }
+export interface StatRow { source: string; eligibility: string; count: number; }
+export interface Job {
+  id: number; media_item_id: number; state: string; progress: number;
+  preset: string | null; original_size: number | null; output_size: number | null;
+  reduction_pct: number | null; output_filename: string | null;
+  error_message: string | null; title: string | null;
+}
+export interface JobPage { total: number; items: Job[]; }
+export interface Exclusion { id: number; source: string; key: string; reason: string; }
+export interface Status {
+  worker_alive: boolean; current_job: Job | null; queue_length: number; stats: StatRow[];
+}
+export interface ScanStatus {
+  state: string; detail: Record<string, unknown>;
+  started_at: string | null; finished_at: string | null;
+}
