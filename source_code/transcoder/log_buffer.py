@@ -38,3 +38,15 @@ class RingBufferHandler(logging.Handler):
 
 # Process-wide singleton used by the API.
 log_buffer = RingBufferHandler()
+
+# Attach to the "transcoder" logger immediately so records are captured even
+# before init_logging() runs (e.g. during tests that skip the app lifespan).
+import logging as _logging
+_transcoder_logger = _logging.getLogger("transcoder")
+if log_buffer not in _transcoder_logger.handlers:
+    log_buffer.setLevel(_logging.DEBUG)
+    _transcoder_logger.addHandler(log_buffer)
+# Ensure the logger itself passes INFO records down to the handler regardless
+# of the root logger's level.
+if _transcoder_logger.level == _logging.NOTSET:
+    _transcoder_logger.setLevel(_logging.INFO)
