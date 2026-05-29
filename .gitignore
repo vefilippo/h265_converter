@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets / config
+.env
+source_code/transcoder/config.py
+
+# Runtime state & artifacts
+source_code/tmp/
+source_code/out/
+source_code/log/
+log/
+tmp/
+out/
+*.db
+*.sqlite
+*.sqlite3
+*.migrated
+
+# Legacy state files (now in DB)
+last_history_timestamp.txt
+excluded_episodes.csv
+excluded_movies.csv
+
+# OS
+Thumbs.db
+.DS_Store
