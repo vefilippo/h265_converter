@@ -29,6 +29,17 @@ python -m transcoder.cli run radarr all --movie "Inception"
 python -m transcoder.cli queue                      # List job states
 ```
 
+**Serve (API, Cycle 2):**
+```bash
+cd source_code
+python -m transcoder.api        # FastAPI + uvicorn on API_HOST:API_PORT (default 0.0.0.0:8765)
+```
+Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
+`POST /api/scan`, `GET /api/scan/status`, `POST /api/enqueue`, `GET /api/jobs`,
+`POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`,
+`GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE). A continuous
+background worker drains the job queue automatically while the server runs.
+
 **Windows batch shortcut:** `source_code/run.bat`
 
 ## Architecture
@@ -48,6 +59,7 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `engine/discovery.py` — scans Sonarr/Radarr, upserts `media_item`s, advances the watermark
 - `engine/queue.py` — turns eligible items into `queued` jobs (deduped)
 - `engine/worker.py` — serial worker: download → transcode → replace-or-exclude → cleanup
+- `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status). `worker_controller.py` runs the continuous background transcode worker (cancellable).
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
 - `sftp_client.py` — upload/download via Paramiko with tqdm progress bars
