@@ -10,7 +10,11 @@ def _watermark_iso(ts: dt.datetime) -> str:
     return ts.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def discover_sonarr(session, client, scope: str = "all", target_title=None) -> int:
+_BATCH = 200  # commit cadence so a long scan doesn't hold the write lock
+
+
+def discover_sonarr(session, client, scope: str = "all", target_title=None,
+                    batch_size: int = _BATCH) -> int:
     """Scan Sonarr and upsert MediaItem rows; return the count of items scanned.
 
     scope="new" only processes series with recent history (via the stored
@@ -18,6 +22,10 @@ def discover_sonarr(session, client, scope: str = "all", target_title=None) -> i
     one series. Note: when target_title is set it takes precedence over the
     recent-ids filter, but the watermark is still advanced (parity with the
     original script).
+
+    Commits every ``batch_size`` items so the SQLite write lock is released
+    frequently — letting the worker and API writers interleave instead of
+    hitting "database is locked" during a multi-thousand-item scan.
     """
     excluded = repo.excluded_keys(session, "sonarr")
     watermark = None
@@ -64,6 +72,8 @@ def discover_sonarr(session, client, scope: str = "all", target_title=None) -> i
                 eligibility=compute_eligibility(resolution, is_h265, key in excluded),
             )
             count += 1
+            if count % batch_size == 0:
+                session.commit()
 
     if scope == "new" and newest is not None:
         repo.set_setting(session, "sonarr_watermark", _watermark_iso(newest))
@@ -72,9 +82,12 @@ def discover_sonarr(session, client, scope: str = "all", target_title=None) -> i
     return count
 
 
-def discover_radarr(session, client, target_movie=None) -> int:
+def discover_radarr(session, client, target_movie=None, batch_size: int = _BATCH) -> int:
     """Scan Radarr (always all movies) and upsert non-H.265 MediaItem rows;
-    return the count of items scanned. target_movie restricts to one movie."""
+    return the count of items scanned. target_movie restricts to one movie.
+
+    Commits every ``batch_size`` items (see discover_sonarr) to keep the write
+    lock short and avoid blocking the worker / API writers."""
     excluded = repo.excluded_keys(session, "radarr")
     rows = client.filter_non_h265_movies(client.get_all_movies())
     if target_movie:
@@ -100,6 +113,8 @@ def discover_radarr(session, client, target_movie=None) -> int:
             eligibility=compute_eligibility(resolution, False, key in excluded),
         )
         count += 1
+        if count % batch_size == 0:
+            session.commit()
 
     session.commit()
     return count
