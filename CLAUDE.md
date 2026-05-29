@@ -40,6 +40,17 @@ Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE). A continuous
 background worker drains the job queue automatically while the server runs.
 
+**Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `source_code/web/`, served by FastAPI behind a single-password login. Requires `APP_PASSWORD` + `SECRET_KEY` in `.env`.
+```bash
+# Dev (hot reload): two processes
+cd source_code && python -m transcoder.api          # API on :8765
+cd source_code/web && npm install && npm run dev     # UI on :5173, proxies /api -> :8765
+# Prod: build once, FastAPI serves UI + API on :8765
+cd source_code/web && npm run build                  # -> web/dist
+cd source_code && python -m transcoder.api           # open http://<host>:8765, log in
+```
+Screens: Dashboard (live status/progress via SSE), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions. Frontend tests: `cd source_code/web && npm test`.
+
 **Windows batch shortcut:** `source_code/run.bat`
 
 ## Architecture
@@ -59,7 +70,8 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `engine/discovery.py` — scans Sonarr/Radarr, upserts `media_item`s, advances the watermark
 - `engine/queue.py` — turns eligible items into `queued` jobs (deduped)
 - `engine/worker.py` — serial worker: download → transcode → replace-or-exclude → cleanup
-- `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status). `worker_controller.py` runs the continuous background transcode worker (cancellable).
+- `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status), `auth.py` (single-password session login, `require_auth`). `worker_controller.py` runs the continuous background transcode worker (cancellable).
+- `web/` — React SPA (Cycle 3, Vite + Tailwind + shadcn-style primitives in `src/components/ui/`): `api/` client+types, `hooks/` (TanStack Query + SSE), `pages/` (Dashboard/Library/Jobs/Exclusions/Login), `auth/` (AuthGate). Built to `web/dist`, served by FastAPI.
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
 - `sftp_client.py` — upload/download via Paramiko with tqdm progress bars
