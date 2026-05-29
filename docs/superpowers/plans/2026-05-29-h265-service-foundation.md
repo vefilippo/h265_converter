@@ -858,7 +858,12 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     for line in process.stdout:
         pct = parse_handbrake_progress(line)
         if pct is not None and progress_cb is not None:
-            progress_cb(pct)
+            try:
+                progress_cb(pct)
+            except Exception:
+                # A progress-update failure (e.g. a transient DB write error)
+                # must not abort the transcode or orphan the subprocess.
+                pass
 
     process.wait()
     elapsed = time.time() - start
