@@ -41,7 +41,9 @@ class RadarrClient:
                     "resolution": movie_file.get("quality").get("quality").get("resolution"),
                     "quality": movie_file.get("quality").get("quality").get("name"),
                     "languages": languages,
-                    "year": movie["year"]
+                    "year": movie["year"],
+                    "movie_id": movie["id"],
+                    "external_id": str(movie_file.get("id")),
                 })
         return non_h265
         

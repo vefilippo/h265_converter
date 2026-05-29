@@ -97,12 +97,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from transcoder.db import Base
-import transcoder.models  # noqa: F401  (registers tables on Base)
-
 
 @pytest.fixture
 def session():
+    # Imported lazily so pytest can collect tests (e.g. test_config) before the
+    # db/models modules exist in earlier tasks.
+    from transcoder.db import Base
+    import transcoder.models  # noqa: F401  (registers tables on Base)
+
     engine = create_engine(
         "sqlite:///:memory:", connect_args={"check_same_thread": False}
     )
@@ -114,6 +116,8 @@ def session():
     finally:
         s.close()
 ```
+
+> Note: the `transcoder.db` / `transcoder.models` imports live *inside* the fixture (not at module top) so pytest collection succeeds in Tasks 1–2 before those modules exist.
 
 - [ ] **Step 5: Commit**
 
@@ -130,7 +134,23 @@ git commit -m "chore: add SQLAlchemy/pydantic-settings/pytest and test scaffoldi
 - Modify: `source_code/transcoder/config.py`
 - Modify: `source_code/transcoder/config.example.py`
 - Create: `source_code/.env.example`
+- Create: `source_code/tests/__init__.py` (empty — avoids pytest import-mode collisions)
+- Modify: `source_code/tests/conftest.py` (rename SFTP env vars)
 - Test: `source_code/tests/test_config.py`
+
+- [ ] **Step 0: Fix conftest env vars + add tests package marker**
+
+Create empty `source_code/tests/__init__.py`.
+
+In `source_code/tests/conftest.py`, replace the three SFTP env-var defaults so they match the new prefixed field names (Windows sets `USERNAME`/`HOSTNAME` system-wide, which would shadow `.env`):
+
+```python
+os.environ.setdefault("SFTP_HOST", "127.0.0.1")
+os.environ.setdefault("SFTP_USERNAME", "tester")
+os.environ.setdefault("SFTP_PASSWORD", "secret")
+```
+
+(Delete the old `HOSTNAME`/`USERNAME`/`PASSWORD` setdefault lines. Leave the Sonarr/Radarr/HANDBRAKE_CLI lines unchanged.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -147,7 +167,7 @@ def test_settings_has_defaults():
     from transcoder.config import settings
     assert settings.PRESET_1080 == "H.265 NVENC 1080p"
     assert settings.DATABASE_URL.startswith("sqlite")
-    assert settings.PORT == 22
+    assert settings.SFTP_PORT == 22
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -167,17 +187,20 @@ class Settings(BaseSettings):
     )
 
     # --- Required (secrets / endpoints) come from .env ---
+    # NOTE: SFTP fields are prefixed (SFTP_*) to avoid collision with Windows
+    # system env vars like USERNAME/HOSTNAME, which os.environ would otherwise
+    # let shadow the .env values (pydantic-settings reads os.environ first).
     SONARR_URL: str
     SONARR_API_KEY: str
     RADARR_URL: str
     RADARR_API_KEY: str
-    HOSTNAME: str
-    USERNAME: str
-    PASSWORD: str
+    SFTP_HOST: str
+    SFTP_USERNAME: str
+    SFTP_PASSWORD: str
     HANDBRAKE_CLI: str
 
     # --- Defaults (overridable via .env) ---
-    PORT: int = 22
+    SFTP_PORT: int = 22
     PRESET_1080: str = "H.265 NVENC 1080p"
     PRESET_4K: str = "H.265 NVENC 2160p 4K"
     OUTPUT_FORMAT: str = "av_mkv"
@@ -219,10 +242,10 @@ SONARR_URL=http://your-sonarr-host:8989
 SONARR_API_KEY=your_sonarr_api_key
 RADARR_URL=http://your-radarr-host:7878
 RADARR_API_KEY=your_radarr_api_key
-HOSTNAME=192.168.x.x
-PORT=22
-USERNAME=your_sftp_user
-PASSWORD=your_sftp_password
+SFTP_HOST=192.168.x.x
+SFTP_PORT=22
+SFTP_USERNAME=your_sftp_user
+SFTP_PASSWORD=your_sftp_password
 HANDBRAKE_CLI=C:\path\to\HandBrakeCLI.exe
 DATABASE_URL=sqlite:///transcoder.db
 ```
@@ -374,10 +397,12 @@ from transcoder.db import Base
 
 
 def utcnow() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    # Naive UTC to match SQLite's DateTime columns, which drop tzinfo on
+    # read-back; keeps comparisons consistent (no mixed aware/naive errors).
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
-def episode_exclusion_key(title: str, season, episode) -> str:
+def episode_exclusion_key(title: str, season: int | str, episode: int | str) -> str:
     return f"{title}|{season}|{episode}"
 
 
@@ -704,6 +729,7 @@ def _add_exclusion(session, source: str, key: str) -> bool:
 
 def migrate_legacy(session) -> dict:
     result = {"episodes": 0, "movies": 0, "watermark": False}
+    to_rename = []
 
     ep_csv = settings.EPISODE_EXCLUSION_CSV
     if os.path.exists(ep_csv):
@@ -714,7 +740,7 @@ def migrate_legacy(session) -> dict:
                 if _add_exclusion(session, "sonarr",
                                   episode_exclusion_key(row[0], row[1], row[2])):
                     result["episodes"] += 1
-        os.rename(ep_csv, ep_csv + ".migrated")
+        to_rename.append(ep_csv)
 
     mv_csv = settings.MOVIE_EXCLUSION_CSV
     if os.path.exists(mv_csv):
@@ -724,7 +750,7 @@ def migrate_legacy(session) -> dict:
                     continue
                 if _add_exclusion(session, "radarr", movie_exclusion_key(row[0])):
                     result["movies"] += 1
-        os.rename(mv_csv, mv_csv + ".migrated")
+        to_rename.append(mv_csv)
 
     hist = settings.LAST_HISTORY_FILE
     if os.path.exists(hist):
@@ -733,9 +759,16 @@ def migrate_legacy(session) -> dict:
         if raw and session.get(Setting, "sonarr_watermark") is None:
             session.add(Setting(key="sonarr_watermark", value=raw))
             result["watermark"] = True
-        os.rename(hist, hist + ".migrated")
+        to_rename.append(hist)
 
+    # Persist all rows BEFORE touching the filesystem, so a crash can't leave
+    # legacy data neither on disk nor in the DB. os.replace is atomic and
+    # overwrites an existing *.migrated (os.rename raises FileExistsError on
+    # Windows if the destination already exists).
     session.commit()
+    for path in to_rename:
+        os.replace(path, path + ".migrated")
+
     return result
 ```
 
@@ -825,25 +858,27 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     for line in process.stdout:
         pct = parse_handbrake_progress(line)
         if pct is not None and progress_cb is not None:
-            progress_cb(pct)
+            try:
+                progress_cb(pct)
+            except Exception:
+                # A progress-update failure (e.g. a transient DB write error)
+                # must not abort the transcode or orphan the subprocess.
+                pass
 
     process.wait()
     elapsed = time.time() - start
 
+    # NOTE: the caller (worker) owns temp-file cleanup of input_file via its
+    # finally block; this function no longer deletes it, to keep a single
+    # owner of the file lifecycle.
     if process.returncode != 0:
         print("HandBrake conversion failed. Skipping this file.")
-        if os.path.exists(input_file):
-            os.remove(input_file)
-            print(f"Deleted temporary file: {input_file}")
         return None, False
 
     original_size = os.path.getsize(input_file) / (1024 * 1024)
     new_size = os.path.getsize(output_file) / (1024 * 1024)
     reduction = ((original_size - new_size) / original_size) * 100 if original_size > 0 else 0
     print(f"Size Reduction: {reduction:.2f}% (took {elapsed:.0f}s)")
-
-    os.remove(input_file)
-    print(f"Deleted temporary file: {input_file}")
 
     return output_file, new_size >= original_size
 ```
@@ -1366,19 +1401,24 @@ def process_one_job(
 ):
     item = job.media_item
     client = clients[item.source]
-
-    job.state = "running"
-    job.started_at = utcnow()
-    job.progress = 0
-    job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
-    session.commit()
+    tmp_file = None
+    output_file = None
 
     try:
+        # Transition to running inside the try so a commit failure here is
+        # recorded as 'failed' (otherwise the job stays 'queued' and
+        # process_queue would re-pick it forever).
+        job.state = "running"
+        job.started_at = utcnow()
+        job.progress = 0
+        job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
+        session.commit()
+
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
         tmp_file = os.path.join("./tmp", os.path.basename(file_path))
-        download(settings.HOSTNAME, settings.PORT, settings.USERNAME, settings.PASSWORD,
-                 file_path, tmp_file)
+        download(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                 settings.SFTP_PASSWORD, file_path, tmp_file)
 
         original_size = os.path.getsize(tmp_file)
         out_name = _output_name(item)
@@ -1407,15 +1447,12 @@ def process_one_job(
             item.eligibility = "excluded"
             job.state = "skipped_larger"
         else:
-            upload(settings.HOSTNAME, settings.PORT, settings.USERNAME, settings.PASSWORD,
-                   output_file, settings.WATCH_FOLDER + out_name)
+            upload(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                   settings.SFTP_PASSWORD, output_file, settings.WATCH_FOLDER + out_name)
             client.manual_import_one(output_file)
             item.eligibility = "already_h265"
             job.output_filename = out_name
             job.state = "done"
-
-        if os.path.exists(output_file):
-            os.remove(output_file)
 
         job.finished_at = utcnow()
         session.commit()
@@ -1427,6 +1464,16 @@ def process_one_job(
         job.finished_at = utcnow()
         session.commit()
         return job
+
+    finally:
+        # Always reclaim local disk: the temp download and the transcoded
+        # output (uploaded already on success; orphaned on skip/failure).
+        for path in (tmp_file, output_file):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
 
 def process_queue(session, clients, *, limit: int | None = None, **io) -> int:
@@ -1570,14 +1617,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _discover(session, app, scope, show, movie):
+def _discover(session, clients, app, scope, show, movie):
     if app in ("all", "sonarr"):
-        n = discover_sonarr(session, SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
-                            scope=scope, target_title=show)
+        n = discover_sonarr(session, clients["sonarr"], scope=scope, target_title=show)
         log.info("Sonarr discovery: %s items", n)
     if app in ("all", "radarr"):
-        n = discover_radarr(session, RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
-                            target_movie=movie)
+        n = discover_radarr(session, clients["radarr"], target_movie=movie)
         log.info("Radarr discovery: %s items", n)
 
 
@@ -1585,11 +1630,6 @@ def main() -> None:
     init_logging()
     init_db()
     args = build_parser().parse_args()
-
-    clients = {
-        "sonarr": SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
-        "radarr": RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
-    }
 
     with SessionLocal() as session:
         migrate_legacy(session)
@@ -1600,7 +1640,14 @@ def main() -> None:
                          job.id, job.state, job.progress, job.media_item.title)
             return
 
-        _discover(session, args.app, args.scope, args.show, args.movie)
+        # Built once here (not needed for the queue listing above) and shared by
+        # both discovery and the worker.
+        clients = {
+            "sonarr": SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
+            "radarr": RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
+        }
+
+        _discover(session, clients, args.app, args.scope, args.show, args.movie)
 
         if args.command == "run":
             created = enqueue_eligible(session,

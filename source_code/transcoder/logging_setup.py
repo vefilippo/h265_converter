@@ -1,16 +1,17 @@
-import logging, datetime as dt, os
-import builtins
+import datetime as dt
+import logging
+import os
 
-def init_logging():
+
+def init_logging(level: int = logging.INFO) -> logging.Logger:
     os.makedirs("log", exist_ok=True)
     fname = dt.datetime.now().strftime("log/%Y-%m-%d_%H-%M-%S.log")
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(fname, encoding="utf-8"),
             logging.StreamHandler(),
-        ]
+        ],
     )
-    # Redirect print() → logging.info()
-    builtins.print = lambda *a, **k: logging.info(" ".join(map(str,a)))
+    return logging.getLogger("transcoder")
