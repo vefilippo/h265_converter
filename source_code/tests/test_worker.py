@@ -36,7 +36,7 @@ def _make_io(smaller=True, fail=False):
         calls["upload"].append((local, remote))
         return {"success": True}
 
-    def convert(tmp, out_name, preset, progress_cb=None):
+    def convert(tmp, out_name, preset, progress_cb=None, cancel_event=None):
         if progress_cb:
             progress_cb(50)
             progress_cb(100)
