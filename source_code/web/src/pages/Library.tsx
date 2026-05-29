@@ -180,11 +180,9 @@ export default function Library() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() =>
-                            actions.enqueue.mutate({ source: item.source })
-                          }
-                          disabled={actions.enqueue.isPending}
-                          title={`Enqueue eligible (${item.source})`}
+                          onClick={() => actions.enqueueItem.mutate(item.id)}
+                          disabled={actions.enqueueItem.isPending}
+                          title="Queue this item for transcoding"
                         >
                           Enqueue
                         </Button>
