@@ -9,3 +9,9 @@ def test_settings_has_defaults():
     assert settings.PRESET_1080 == "H.265 NVENC 1080p"
     assert settings.DATABASE_URL.startswith("sqlite")
     assert settings.SFTP_PORT == 22
+
+
+def test_settings_api_defaults():
+    from transcoder.config import settings
+    assert settings.API_PORT == 8765
+    assert settings.API_HOST == "0.0.0.0"

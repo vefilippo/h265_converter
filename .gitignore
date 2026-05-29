@@ -10,8 +10,9 @@ venv/
 env/
 
 # Secrets / config
+# NOTE: transcoder/config.py is now the secret-free pydantic-settings module
+# (real values come from .env, which stays ignored), so it IS tracked.
 .env
-source_code/transcoder/config.py
 
 # Runtime state & artifacts
 source_code/tmp/
