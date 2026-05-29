@@ -36,6 +36,11 @@ export const useLogs = (after: number) =>
     queryKey: ["logs", after],
     queryFn: () => api.get<LogPage>(`/api/logs?after=${after}`),
     refetchInterval: 2000,
+    // The query key changes each time the cursor advances; gcTime:0 collects the
+    // now-inactive previous key immediately so the cache doesn't grow unbounded
+    // over a long logs session. staleTime avoids a double-fetch on mount.
+    gcTime: 0,
+    staleTime: 1500,
   });
 
 export function useActions() {
