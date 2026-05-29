@@ -130,7 +130,23 @@ git commit -m "chore: add SQLAlchemy/pydantic-settings/pytest and test scaffoldi
 - Modify: `source_code/transcoder/config.py`
 - Modify: `source_code/transcoder/config.example.py`
 - Create: `source_code/.env.example`
+- Create: `source_code/tests/__init__.py` (empty — avoids pytest import-mode collisions)
+- Modify: `source_code/tests/conftest.py` (rename SFTP env vars)
 - Test: `source_code/tests/test_config.py`
+
+- [ ] **Step 0: Fix conftest env vars + add tests package marker**
+
+Create empty `source_code/tests/__init__.py`.
+
+In `source_code/tests/conftest.py`, replace the three SFTP env-var defaults so they match the new prefixed field names (Windows sets `USERNAME`/`HOSTNAME` system-wide, which would shadow `.env`):
+
+```python
+os.environ.setdefault("SFTP_HOST", "127.0.0.1")
+os.environ.setdefault("SFTP_USERNAME", "tester")
+os.environ.setdefault("SFTP_PASSWORD", "secret")
+```
+
+(Delete the old `HOSTNAME`/`USERNAME`/`PASSWORD` setdefault lines. Leave the Sonarr/Radarr/HANDBRAKE_CLI lines unchanged.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -147,7 +163,7 @@ def test_settings_has_defaults():
     from transcoder.config import settings
     assert settings.PRESET_1080 == "H.265 NVENC 1080p"
     assert settings.DATABASE_URL.startswith("sqlite")
-    assert settings.PORT == 22
+    assert settings.SFTP_PORT == 22
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -167,17 +183,20 @@ class Settings(BaseSettings):
     )
 
     # --- Required (secrets / endpoints) come from .env ---
+    # NOTE: SFTP fields are prefixed (SFTP_*) to avoid collision with Windows
+    # system env vars like USERNAME/HOSTNAME, which os.environ would otherwise
+    # let shadow the .env values (pydantic-settings reads os.environ first).
     SONARR_URL: str
     SONARR_API_KEY: str
     RADARR_URL: str
     RADARR_API_KEY: str
-    HOSTNAME: str
-    USERNAME: str
-    PASSWORD: str
+    SFTP_HOST: str
+    SFTP_USERNAME: str
+    SFTP_PASSWORD: str
     HANDBRAKE_CLI: str
 
     # --- Defaults (overridable via .env) ---
-    PORT: int = 22
+    SFTP_PORT: int = 22
     PRESET_1080: str = "H.265 NVENC 1080p"
     PRESET_4K: str = "H.265 NVENC 2160p 4K"
     OUTPUT_FORMAT: str = "av_mkv"
@@ -219,10 +238,10 @@ SONARR_URL=http://your-sonarr-host:8989
 SONARR_API_KEY=your_sonarr_api_key
 RADARR_URL=http://your-radarr-host:7878
 RADARR_API_KEY=your_radarr_api_key
-HOSTNAME=192.168.x.x
-PORT=22
-USERNAME=your_sftp_user
-PASSWORD=your_sftp_password
+SFTP_HOST=192.168.x.x
+SFTP_PORT=22
+SFTP_USERNAME=your_sftp_user
+SFTP_PASSWORD=your_sftp_password
 HANDBRAKE_CLI=C:\path\to\HandBrakeCLI.exe
 DATABASE_URL=sqlite:///transcoder.db
 ```
@@ -1377,8 +1396,8 @@ def process_one_job(
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
         tmp_file = os.path.join("./tmp", os.path.basename(file_path))
-        download(settings.HOSTNAME, settings.PORT, settings.USERNAME, settings.PASSWORD,
-                 file_path, tmp_file)
+        download(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                 settings.SFTP_PASSWORD, file_path, tmp_file)
 
         original_size = os.path.getsize(tmp_file)
         out_name = _output_name(item)
@@ -1407,8 +1426,8 @@ def process_one_job(
             item.eligibility = "excluded"
             job.state = "skipped_larger"
         else:
-            upload(settings.HOSTNAME, settings.PORT, settings.USERNAME, settings.PASSWORD,
-                   output_file, settings.WATCH_FOLDER + out_name)
+            upload(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                   settings.SFTP_PASSWORD, output_file, settings.WATCH_FOLDER + out_name)
             client.manual_import_one(output_file)
             item.eligibility = "already_h265"
             job.output_filename = out_name
