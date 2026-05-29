@@ -1,4 +1,5 @@
 """Process-wide singletons for the API: the worker controller and scan status."""
+import datetime as dt
 import threading
 
 from transcoder.config import settings
@@ -15,6 +16,10 @@ def build_clients() -> dict:
     }
 
 
+def _now_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
 class ScanStatus:
     """In-memory status of the most recent scan (single-user app)."""
 
@@ -22,15 +27,24 @@ class ScanStatus:
         self._lock = threading.Lock()
         self.state = "idle"          # idle | running | done | error
         self.detail = {}             # arbitrary counts / message
+        self.started_at = None       # ISO-8601 when the current/last scan began
+        self.finished_at = None      # ISO-8601 when it reached done/error
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {"state": self.state, "detail": dict(self.detail)}
+            return {
+                "state": self.state,
+                "detail": dict(self.detail),
+                "started_at": self.started_at,
+                "finished_at": self.finished_at,
+            }
 
     def set(self, state: str, **detail):
         with self._lock:
             self.state = state
             self.detail = detail
+            if state in ("done", "error"):
+                self.finished_at = _now_iso()
 
     def try_start(self) -> bool:
         """Atomically transition to 'running' if not already running.
@@ -43,6 +57,8 @@ class ScanStatus:
                 return False
             self.state = "running"
             self.detail = {}
+            self.started_at = _now_iso()
+            self.finished_at = None
             return True
 
     @property

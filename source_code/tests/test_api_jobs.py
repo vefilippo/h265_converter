@@ -1,3 +1,6 @@
+import threading
+
+from transcoder.api import state as api_state
 from transcoder.models import Exclusion, Job, MediaItem
 
 
@@ -37,6 +40,43 @@ def test_cancel_queued_job(api):
     r = client.post(f"/api/jobs/{jid}/cancel")
     assert r.status_code == 200
     assert r.json()["state"] == "cancelled"
+
+
+def test_cancel_running_job_signals_controller(api, monkeypatch):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add(Job(media_item_id=iid, state="running"))
+    s.commit()
+    jid = s.query(Job).one().id
+    s.close()
+
+    # Simulate the worker currently running this job.
+    ev = threading.Event()
+    monkeypatch.setattr(api_state.controller, "_current_job_id", jid)
+    monkeypatch.setattr(api_state.controller, "_current_cancel", ev)
+
+    r = client.post(f"/api/jobs/{jid}/cancel")
+    assert r.status_code == 200
+    # async cancel: state stays "running" until the worker flips it later
+    assert r.json()["state"] == "running"
+    # the controller was signalled to stop the in-flight transcode
+    assert ev.is_set() is True
+
+
+def test_cancel_running_job_not_on_worker_returns_409(api, monkeypatch):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add(Job(media_item_id=iid, state="running"))
+    s.commit()
+    jid = s.query(Job).one().id
+    s.close()
+
+    # Controller is not running this job (stale 'running' row).
+    monkeypatch.setattr(api_state.controller, "_current_job_id", None)
+    r = client.post(f"/api/jobs/{jid}/cancel")
+    assert r.status_code == 409
 
 
 def test_cancel_non_cancellable_state_returns_409(api):

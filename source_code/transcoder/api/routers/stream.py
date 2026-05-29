@@ -52,9 +52,13 @@ def stream(max_events: int | None = None, session: Session = Depends(get_session
         count = 1
         while max_events is None or count < max_events:
             await asyncio.sleep(1.0)
+            # Drop the identity-map cache so the next read reflects the worker's
+            # latest committed progress (sessions use expire_on_commit=False).
+            session.expire_all()
             cur = _current_job_out(session)
             payload = cur.model_dump() if cur else None
-            yield f"event: progress\ndata: {json.dumps(payload)}\n\n"
+            event = "progress" if cur else "heartbeat"
+            yield f"event: {event}\ndata: {json.dumps(payload)}\n\n"
             count += 1
 
     return StreamingResponse(gen(), media_type="text/event-stream")
