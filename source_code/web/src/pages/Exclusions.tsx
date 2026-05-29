@@ -15,6 +15,7 @@ export default function Exclusions() {
   const [key, setKey] = useState("");
 
   const addError = actions.addExclusion.error as Error | null;
+  const orphanCount = (exclusions ?? []).filter((e) => !e.matched).length;
 
   function handleAdd() {
     if (!key.trim()) return;
@@ -71,8 +72,23 @@ export default function Exclusions() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex items-center justify-between">
           <CardTitle>Exclusion List</CardTitle>
+          {orphanCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => actions.pruneExclusions.mutate()}
+              disabled={actions.pruneExclusions.isPending}
+              title="Remove exclusions that no longer match any library item"
+            >
+              {actions.pruneExclusions.isPending ? (
+                <Spinner size="sm" />
+              ) : (
+                `Remove orphaned (${orphanCount})`
+              )}
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -88,6 +104,7 @@ export default function Exclusions() {
                   <TH>Source</TH>
                   <TH>Key</TH>
                   <TH>Reason</TH>
+                  <TH>Status</TH>
                   <TH>Actions</TH>
                 </TR>
               </THead>
@@ -103,6 +120,11 @@ export default function Exclusions() {
                     <TD>
                       <Badge variant={ex.reason === "output_larger" ? "skipped" : "neutral"}>
                         {ex.reason}
+                      </Badge>
+                    </TD>
+                    <TD>
+                      <Badge variant={ex.matched ? "done" : "skipped"}>
+                        {ex.matched ? "in library" : "orphaned"}
                       </Badge>
                     </TD>
                     <TD>

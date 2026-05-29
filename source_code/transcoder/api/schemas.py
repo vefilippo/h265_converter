@@ -75,6 +75,7 @@ class ExclusionOut(BaseModel):
     source: str
     key: str
     reason: str
+    matched: bool = True  # does this exclusion correspond to a current library item?
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +84,10 @@ class ExclusionIn(BaseModel):
     source: str
     key: str
     reason: str = "manual"
+
+
+class PruneOut(BaseModel):
+    removed: int
 
 
 class StatusOut(BaseModel):
