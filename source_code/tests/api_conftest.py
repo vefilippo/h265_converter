@@ -46,5 +46,6 @@ def api(monkeypatch):
     app.dependency_overrides[get_session] = _override
 
     client = TestClient(app)
+    client.post("/api/login", json={"password": "test-pass"})  # authenticate by default
     yield client, Session
     client.close()
