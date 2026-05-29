@@ -32,6 +32,19 @@ class ScanStatus:
             self.state = state
             self.detail = detail
 
+    def try_start(self) -> bool:
+        """Atomically transition to 'running' if not already running.
+
+        Returns True if this caller acquired the scan slot, False if a scan is
+        already running. Closes the check-then-set race in the scan endpoint.
+        """
+        with self._lock:
+            if self.state == "running":
+                return False
+            self.state = "running"
+            self.detail = {}
+            return True
+
     @property
     def running(self) -> bool:
         with self._lock:
