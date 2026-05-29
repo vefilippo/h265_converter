@@ -521,9 +521,10 @@ class WorkerController:
 
     # --- lifecycle ---
     def start(self):
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(target=self._run, name="transcode-worker", daemon=True)
+        with self._lock:
+            if self._thread is not None:
+                return
+            self._thread = threading.Thread(target=self._run, name="transcode-worker", daemon=True)
         self._thread.start()
 
     def shutdown(self, timeout=10.0):
@@ -532,9 +533,10 @@ class WorkerController:
             if self._current_cancel is not None:
                 self._current_cancel.set()
         self._wake.set()
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
-            self._thread = None
+        with self._lock:
+            thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=timeout)
 
     def wake(self):
         self._wake.set()
@@ -579,21 +581,29 @@ class WorkerController:
 
     def _run(self):
         while not self._stop.is_set():
-            session = self._session_factory()
+            session = None
             try:
+                session = self._session_factory()
                 job_id = self._next_job_id(session)
                 if job_id is None:
-                    session.close()
+                    # Outer finally closes the session; just idle until woken.
                     self._wake.wait(timeout=self._idle_timeout)
                     self._wake.clear()
                     continue
 
                 job = session.get(Job, job_id)
+                if job is None:
+                    continue
                 cancel_event = threading.Event()
                 with self._lock:
                     self._current_job_id = job_id
                     self._current_cancel = cancel_event
                 try:
+                    # Re-read state under the live transaction: a cancel may have
+                    # landed between job selection and registering it as current.
+                    session.refresh(job)
+                    if job.state == "cancelled":
+                        continue
                     self._process(session, job, self._clients, cancel_event=cancel_event)
                 except Exception:  # noqa: BLE001 — never let one job kill the loop
                     log.exception("worker: job %s crashed", job_id)
@@ -602,7 +612,8 @@ class WorkerController:
                         self._current_job_id = None
                         self._current_cancel = None
             finally:
-                session.close()
+                if session is not None:
+                    session.close()
 ```
 
 - [ ] **Step 4: Run, confirm PASS.** Run: `.venv/Scripts/python.exe -m pytest tests/test_worker_controller.py -v`
