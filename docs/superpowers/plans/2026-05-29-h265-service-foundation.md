@@ -1404,14 +1404,19 @@ def process_one_job(
 ):
     item = job.media_item
     client = clients[item.source]
-
-    job.state = "running"
-    job.started_at = utcnow()
-    job.progress = 0
-    job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
-    session.commit()
+    tmp_file = None
+    output_file = None
 
     try:
+        # Transition to running inside the try so a commit failure here is
+        # recorded as 'failed' (otherwise the job stays 'queued' and
+        # process_queue would re-pick it forever).
+        job.state = "running"
+        job.started_at = utcnow()
+        job.progress = 0
+        job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
+        session.commit()
+
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
         tmp_file = os.path.join("./tmp", os.path.basename(file_path))
@@ -1452,9 +1457,6 @@ def process_one_job(
             job.output_filename = out_name
             job.state = "done"
 
-        if os.path.exists(output_file):
-            os.remove(output_file)
-
         job.finished_at = utcnow()
         session.commit()
         return job
@@ -1465,6 +1467,16 @@ def process_one_job(
         job.finished_at = utcnow()
         session.commit()
         return job
+
+    finally:
+        # Always reclaim local disk: the temp download and the transcoded
+        # output (uploaded already on success; orphaned on skip/failure).
+        for path in (tmp_file, output_file):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
 
 def process_queue(session, clients, *, limit: int | None = None, **io) -> int:
