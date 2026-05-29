@@ -1255,34 +1255,42 @@ def list_jobs(
     return JobPage(total=total, items=[_to_out(j) for j in rows])
 
 
-@router.get("/jobs/{job_id}", response_model=JobOut)
-def get_job(job_id: int, session: Session = Depends(get_session)):
-    job = session.query(Job).options(joinedload(Job.media_item)).get(job_id)
+def _get_job(session: Session, job_id: int) -> Job:
+    # session.get forwards loader options in SQLAlchemy 2.0 (Query.get does not).
+    job = session.get(Job, job_id, options=[joinedload(Job.media_item)])
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
-    return _to_out(job)
+    return job
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut)
+def get_job(job_id: int, session: Session = Depends(get_session)):
+    return _to_out(_get_job(session, job_id))
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobOut)
 def cancel_job(job_id: int, session: Session = Depends(get_session)):
-    job = session.query(Job).options(joinedload(Job.media_item)).get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
-    if job.state == "running" and state.controller.current_job_id == job_id:
-        # running on the live worker → signal the worker to kill the subprocess
-        state.controller.request_cancel(job_id)
+    job = _get_job(session, job_id)
+    if job.state == "running":
+        if state.controller.current_job_id == job_id:
+            state.controller.request_cancel(job_id)
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="job is marked running but not active on the worker; cannot cancel",
+            )
     elif job.state == "queued":
         job.state = "cancelled"
         session.commit()
+    else:
+        raise HTTPException(status_code=409, detail=f"job state {job.state} cannot be cancelled")
     session.refresh(job)
     return _to_out(job)
 
 
 @router.post("/jobs/{job_id}/retry", response_model=JobOut)
 def retry_job(job_id: int, session: Session = Depends(get_session)):
-    job = session.query(Job).options(joinedload(Job.media_item)).get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
+    job = _get_job(session, job_id)
     if job.state not in _RETRYABLE:
         raise HTTPException(status_code=409, detail=f"job state {job.state} is not retryable")
 
@@ -1304,11 +1312,15 @@ def retry_job(job_id: int, session: Session = Depends(get_session)):
     if active is None:
         new_job = Job(media_item_id=item.id, state="queued")
         session.add(new_job)
-        session.commit()
+    # Commit unconditionally so exclusion deletes + eligibility reset (and the
+    # new job, if any) are persisted before we refresh/return.
+    session.commit()
     state.controller.wake()
     session.refresh(new_job)
     return _to_out(new_job)
 ```
+
+> Note: `list_jobs` uses `Query(100, ge=1, le=500)` / `Query(0, ge=0)` bounds (as in the library router), and the lookups use `session.get(..., options=[joinedload(...)])` rather than the deprecated `Query.get()`.
 
 - [ ] **Step 4: Run, confirm PASS.** Run: `.venv/Scripts/python.exe -m pytest tests/test_api_jobs.py -v`
 Expected: PASS (5 tests). Note: `cancel` of a queued job flips state via the request session; the controller singleton is never started in tests, and `current_job_id` is `None`, so the queued branch runs.
