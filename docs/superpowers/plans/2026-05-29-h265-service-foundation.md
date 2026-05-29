@@ -397,10 +397,12 @@ from transcoder.db import Base
 
 
 def utcnow() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    # Naive UTC to match SQLite's DateTime columns, which drop tzinfo on
+    # read-back; keeps comparisons consistent (no mixed aware/naive errors).
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
-def episode_exclusion_key(title: str, season, episode) -> str:
+def episode_exclusion_key(title: str, season: int | str, episode: int | str) -> str:
     return f"{title}|{season}|{episode}"
 
 
