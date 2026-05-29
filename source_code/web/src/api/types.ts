@@ -13,7 +13,7 @@ export interface Job {
   error_message: string | null; title: string | null;
 }
 export interface JobPage { total: number; items: Job[]; }
-export interface Exclusion { id: number; source: string; key: string; reason: string; }
+export interface Exclusion { id: number; source: string; key: string; reason: string; matched: boolean; }
 export interface Status {
   worker_alive: boolean; current_job: Job | null; queue_length: number; stats: StatRow[];
 }

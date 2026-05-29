@@ -8,14 +8,20 @@ import Exclusions from "./Exclusions";
 afterEach(() => vi.restoreAllMocks());
 
 const EXCLUSIONS = [
-  { id: 1, source: "sonarr", key: "Show A|1|1", reason: "output_larger" },
-  { id: 2, source: "radarr", key: "Movie X", reason: "manual" },
+  { id: 1, source: "sonarr", key: "Show A|1|1", reason: "output_larger", matched: true },
+  { id: 2, source: "radarr", key: "Movie X", reason: "manual", matched: false },
 ];
 
 function makeFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
+    if (url.includes("/api/exclusions/prune") && init?.method === "POST") {
+      return new Response(JSON.stringify({ removed: 1 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/api/exclusions") && init?.method === "DELETE") {
       return new Response(null, { status: 204 });
     }
@@ -75,6 +81,27 @@ test("filling key input and clicking Add triggers POST /api/exclusions", async (
       return url.includes("/api/exclusions") && c[1]?.method === "POST";
     });
     expect(postCall).toBeDefined();
+  });
+});
+
+test("shows orphaned status and prunes orphans", async () => {
+  const mockFetch = makeFetch();
+  vi.stubGlobal("fetch", mockFetch);
+  wrap(<Exclusions />);
+
+  await screen.findByText("Movie X");
+  // the orphaned (unmatched) exclusion is flagged
+  expect(screen.getByText("orphaned")).toBeInTheDocument();
+  expect(screen.getByText("in library")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /remove orphaned/i }));
+
+  await waitFor(() => {
+    const hit = mockFetch.mock.calls.some((c) => {
+      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
+      return url.includes("/api/exclusions/prune") && c[1]?.method === "POST";
+    });
+    expect(hit).toBe(true);
   });
 });
 

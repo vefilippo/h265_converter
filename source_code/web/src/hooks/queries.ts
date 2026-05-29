@@ -67,5 +67,6 @@ export function useActions() {
     retry: useMutation({ mutationFn: (id: number) => api.post(`/api/jobs/${id}/retry`), onSuccess: invalidate }),
     addExclusion: useMutation({ mutationFn: (b: object) => api.post("/api/exclusions", b), onSuccess: invalidate }),
     delExclusion: useMutation({ mutationFn: (id: number) => api.del(`/api/exclusions/${id}`), onSuccess: invalidate }),
+    pruneExclusions: useMutation({ mutationFn: () => api.post("/api/exclusions/prune"), onSuccess: invalidate }),
   };
 }
