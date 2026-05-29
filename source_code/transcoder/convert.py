@@ -1,9 +1,12 @@
+import logging
 import os
 import re
 import subprocess
 import time
 
 from transcoder.config import settings
+
+log = logging.getLogger("transcoder")
 
 _PROGRESS_RE = re.compile(r"Encoding: .*?\s(\d{1,3})\.\d+ %")
 
@@ -31,7 +34,7 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     ]
 
     start = time.time()
-    print(f"Conversion Started for {output_filename}")
+    log.info("Conversion Started for %s", output_filename)
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
@@ -57,12 +60,12 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     # finally block; this function no longer deletes it, to keep a single
     # owner of the file lifecycle.
     if process.returncode != 0:
-        print("HandBrake conversion failed. Skipping this file.")
+        log.error("HandBrake conversion failed. Skipping this file.")
         return None, False
 
     original_size = os.path.getsize(input_file) / (1024 * 1024)
     new_size = os.path.getsize(output_file) / (1024 * 1024)
     reduction = ((original_size - new_size) / original_size) * 100 if original_size > 0 else 0
-    print(f"Size Reduction: {reduction:.2f}% (took {elapsed:.0f}s)")
+    log.info("Size Reduction: %.2f%% (took %.0fs)", reduction, elapsed)
 
     return output_file, new_size >= original_size

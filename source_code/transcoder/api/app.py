@@ -44,13 +44,14 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(auth_router)
 
     # Protected API routers.
-    from transcoder.api.routers import library, scan, jobs, exclusions, stream
+    from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs
     protected = [Depends(require_auth)]
     app.include_router(library.router, dependencies=protected)
     app.include_router(scan.router, dependencies=protected)
     app.include_router(jobs.router, dependencies=protected)
     app.include_router(exclusions.router, dependencies=protected)
     app.include_router(stream.router, dependencies=protected)
+    app.include_router(logs.router, dependencies=protected)
 
     import os
     from fastapi import Request

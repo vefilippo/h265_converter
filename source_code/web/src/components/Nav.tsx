@@ -8,6 +8,7 @@ const navLinks = [
   { to: "/library", label: "Library" },
   { to: "/jobs", label: "Jobs" },
   { to: "/exclusions", label: "Exclusions" },
+  { to: "/logs", label: "Logs" },
 ];
 
 export function Nav() {

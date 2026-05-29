@@ -2,6 +2,8 @@ import datetime as dt
 import logging
 import os
 
+from transcoder.log_buffer import log_buffer
+
 
 def init_logging(level: int = logging.INFO) -> logging.Logger:
     os.makedirs("log", exist_ok=True)
@@ -14,4 +16,9 @@ def init_logging(level: int = logging.INFO) -> logging.Logger:
             logging.StreamHandler(),
         ],
     )
-    return logging.getLogger("transcoder")
+    logger = logging.getLogger("transcoder")
+    logger.setLevel(level)
+    if log_buffer not in logger.handlers:
+        log_buffer.setLevel(level)
+        logger.addHandler(log_buffer)
+    return logger

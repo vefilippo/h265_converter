@@ -90,3 +90,15 @@ class StatusOut(BaseModel):
     current_job: JobOut | None = None
     queue_length: int
     stats: list[StatRow]
+
+
+class LogLine(BaseModel):
+    seq: int
+    ts: str
+    level: str
+    message: str
+
+
+class LogPage(BaseModel):
+    lines: list[LogLine]
+    last_seq: int
