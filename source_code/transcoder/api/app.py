@@ -51,4 +51,27 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(jobs.router, dependencies=protected)
     app.include_router(exclusions.router, dependencies=protected)
     app.include_router(stream.router, dependencies=protected)
+
+    import os
+    from fastapi import Request
+    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.staticfiles import StaticFiles
+
+    dist = settings.WEB_DIST
+    index_html = os.path.join(dist, "index.html")
+    if os.path.isfile(index_html):
+        assets_dir = os.path.join(dist, "assets")
+        if os.path.isdir(assets_dir):
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+        @app.get("/{full_path:path}")
+        def spa(full_path: str, request: Request):
+            # API paths must never fall through to the SPA shell.
+            if full_path.startswith("api/"):
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            candidate = os.path.join(dist, full_path)
+            if full_path and os.path.isfile(candidate):
+                return FileResponse(candidate)
+            return FileResponse(index_html)
+
     return app
