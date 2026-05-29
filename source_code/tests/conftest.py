@@ -26,7 +26,9 @@ def session():
         "sqlite:///:memory:", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    # Mirror production SessionLocal (db.py): autoflush=False so tests exercise
+    # the same flush semantics as the real app.
+    Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     s = Session()
     try:
         yield s

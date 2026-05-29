@@ -18,6 +18,24 @@ def test_upsert_media_item_is_idempotent(session):
     assert items[0].resolution == 2160
 
 
+def test_upsert_dedupes_shared_external_id_within_one_run(session):
+    # Sonarr multi-episode files share one episodeFileId, so discovery upserts
+    # the same (source, external_id) twice before committing. This must collapse
+    # to a single row rather than violating the unique constraint at commit.
+    repo.upsert_media_item(
+        session, source="sonarr", external_id="921", title="Firefly",
+        season=1, episode=1, resolution=480,
+    )
+    repo.upsert_media_item(
+        session, source="sonarr", external_id="921", title="Firefly",
+        season=1, episode=2, resolution=480,
+    )
+    session.commit()
+    items = session.query(MediaItem).filter_by(source="sonarr", external_id="921").all()
+    assert len(items) == 1
+    assert items[0].episode == 2
+
+
 def test_setting_helpers(session):
     assert repo.get_setting(session, "k") is None
     repo.set_setting(session, "k", "v1")

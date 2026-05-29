@@ -27,6 +27,12 @@ def upsert_media_item(session, *, source: str, external_id: str, **fields) -> Me
             )
         setattr(item, key, value)
     item.last_scanned_at = utcnow()
+    # Flush so a newly-created row is visible to later upserts in the SAME
+    # uncommitted run (e.g. Sonarr multi-episode files share one episodeFileId
+    # and are visited under multiple episodes). Without this, an autoflush=False
+    # session would not see the pending insert and would create a duplicate,
+    # violating the (source, external_id) unique constraint at commit.
+    session.flush()
     return item
 
 
@@ -41,6 +47,9 @@ def set_setting(session, key: str, value: str) -> None:
         row.value = value
     else:
         session.add(Setting(key=key, value=value))
+    # Flush so a repeat get/set in the same uncommitted (autoflush=False) run
+    # sees this write instead of inserting a duplicate primary key.
+    session.flush()
 
 
 def excluded_keys(session, source: str) -> set[str]:
