@@ -81,6 +81,34 @@ test("renders both item titles", async () => {
   expect(await screen.findByText(/Movie X/)).toBeInTheDocument();
 });
 
+test("shows season/episode columns for TV and — for movies", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Library />);
+  await screen.findByText(/Show A/);
+  // TV episode is shown padded (S/E columns); movie has no season -> dash present
+  expect(screen.getByText("01")).toBeInTheDocument(); // season 1
+  expect(screen.getByText("02")).toBeInTheDocument(); // episode 2
+});
+
+test("typing in the series search refetches with q=", async () => {
+  const mockFetch = makeFetch();
+  vi.stubGlobal("fetch", mockFetch);
+  wrap(<Library />);
+  await screen.findByText(/Show A/);
+
+  fireEvent.change(screen.getByPlaceholderText(/search title/i), {
+    target: { value: "break" },
+  });
+
+  await waitFor(() => {
+    const hit = mockFetch.mock.calls.some((c) => {
+      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
+      return url.includes("/api/library") && url.includes("q=break");
+    });
+    expect(hit).toBe(true);
+  });
+});
+
 test("clicking Exclude on row 1 triggers POST to /api/exclusions", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("fetch", mockFetch);
