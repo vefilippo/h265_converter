@@ -708,6 +708,19 @@ class ScanStatus:
             self.state = state
             self.detail = detail
 
+    def try_start(self) -> bool:
+        """Atomically transition to 'running' if not already running.
+
+        Returns True if this caller acquired the scan slot, False otherwise.
+        Closes the check-then-set race in the scan endpoint.
+        """
+        with self._lock:
+            if self.state == "running":
+                return False
+            self.state = "running"
+            self.detail = {}
+            return True
+
     @property
     def running(self) -> bool:
         with self._lock:
@@ -1507,7 +1520,7 @@ log = logging.getLogger("transcoder")
 
 
 def _run_scan(body: ScanIn):
-    state.scan_status.set("running")
+    # State is already "running" (set atomically by start_scan via try_start()).
     detail = {}
     try:
         clients = build_clients()
@@ -1529,7 +1542,9 @@ def _run_scan(body: ScanIn):
 
 @router.post("/scan", status_code=202)
 def start_scan(body: ScanIn, background: BackgroundTasks):
-    if state.scan_status.running:
+    # Atomic check-and-set (ScanStatus.try_start) avoids a TOCTOU race where two
+    # near-simultaneous requests both pass the guard before either task runs.
+    if not state.scan_status.try_start():
         raise HTTPException(status_code=409, detail="a scan is already running")
     background.add_task(_run_scan, body)
     return {"status": "accepted"}
