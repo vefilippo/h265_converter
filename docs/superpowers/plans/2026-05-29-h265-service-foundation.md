@@ -1620,14 +1620,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _discover(session, app, scope, show, movie):
+def _discover(session, clients, app, scope, show, movie):
     if app in ("all", "sonarr"):
-        n = discover_sonarr(session, SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
-                            scope=scope, target_title=show)
+        n = discover_sonarr(session, clients["sonarr"], scope=scope, target_title=show)
         log.info("Sonarr discovery: %s items", n)
     if app in ("all", "radarr"):
-        n = discover_radarr(session, RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
-                            target_movie=movie)
+        n = discover_radarr(session, clients["radarr"], target_movie=movie)
         log.info("Radarr discovery: %s items", n)
 
 
@@ -1635,11 +1633,6 @@ def main() -> None:
     init_logging()
     init_db()
     args = build_parser().parse_args()
-
-    clients = {
-        "sonarr": SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
-        "radarr": RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
-    }
 
     with SessionLocal() as session:
         migrate_legacy(session)
@@ -1650,7 +1643,14 @@ def main() -> None:
                          job.id, job.state, job.progress, job.media_item.title)
             return
 
-        _discover(session, args.app, args.scope, args.show, args.movie)
+        # Built once here (not needed for the queue listing above) and shared by
+        # both discovery and the worker.
+        clients = {
+            "sonarr": SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
+            "radarr": RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
+        }
+
+        _discover(session, clients, args.app, args.scope, args.show, args.movie)
 
         if args.command == "run":
             created = enqueue_eligible(session,
