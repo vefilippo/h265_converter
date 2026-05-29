@@ -97,12 +97,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from transcoder.db import Base
-import transcoder.models  # noqa: F401  (registers tables on Base)
-
 
 @pytest.fixture
 def session():
+    # Imported lazily so pytest can collect tests (e.g. test_config) before the
+    # db/models modules exist in earlier tasks.
+    from transcoder.db import Base
+    import transcoder.models  # noqa: F401  (registers tables on Base)
+
     engine = create_engine(
         "sqlite:///:memory:", connect_args={"check_same_thread": False}
     )
@@ -114,6 +116,8 @@ def session():
     finally:
         s.close()
 ```
+
+> Note: the `transcoder.db` / `transcoder.models` imports live *inside* the fixture (not at module top) so pytest collection succeeds in Tasks 1–2 before those modules exist.
 
 - [ ] **Step 5: Commit**
 
