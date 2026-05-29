@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge, eligibilityVariant } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
 import { Spinner } from "../components/ui/spinner";
 import {
   Table,
@@ -26,28 +27,35 @@ function exclusionKey(item: MediaItem): string {
     : item.title;
 }
 
-function formatTitle(item: MediaItem): string {
-  if (item.source === "sonarr" && item.season != null && item.episode != null) {
-    const s = String(item.season).padStart(2, "0");
-    const e = String(item.episode).padStart(2, "0");
-    return `${item.title} S${s}E${e}`;
-  }
-  if (item.year != null) {
-    return `${item.title} (${item.year})`;
-  }
-  return item.title;
+function seriesLabel(item: MediaItem): string {
+  // For movies, append the year; for TV the bare series title (season/episode
+  // live in their own columns).
+  return item.source === "radarr" && item.year != null
+    ? `${item.title} (${item.year})`
+    : item.title;
+}
+
+function pad2(n: number | null): string {
+  return n != null ? String(n).padStart(2, "0") : "—";
 }
 
 export default function Library() {
   const [source, setSource] = useState<string | undefined>(undefined);
   const [eligibility, setEligibility] = useState<string | undefined>(undefined);
+  const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
 
   const [scanOpen, setScanOpen] = useState(false);
   const [scanApp, setScanApp] = useState<ScanApp>("all");
   const [scanScope, setScanScope] = useState<ScanScope>("all");
 
-  const { data, isLoading } = useLibrary(source, eligibility, offset, LIMIT);
+  const { data, isLoading } = useLibrary(
+    source,
+    eligibility,
+    offset,
+    LIMIT,
+    search.trim() || undefined,
+  );
   const actions = useActions();
 
   const total = data?.total ?? 0;
@@ -60,6 +68,11 @@ export default function Library() {
 
   function handleEligibilityChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setEligibility(e.target.value === "all" ? undefined : e.target.value);
+    setOffset(0);
+  }
+
+  function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setSearch(e.target.value);
     setOffset(0);
   }
 
@@ -89,6 +102,19 @@ export default function Library() {
 
       {/* Filter controls */}
       <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted" htmlFor="series-search">
+            Series
+          </label>
+          <Input
+            id="series-search"
+            value={search}
+            onChange={handleSearchChange}
+            placeholder="Search title…"
+            className="w-56"
+          />
+        </div>
+
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted" htmlFor="source-filter">
             Source
@@ -142,7 +168,9 @@ export default function Library() {
           <Table>
             <THead>
               <TR>
-                <TH>Title</TH>
+                <TH>Series / Title</TH>
+                <TH>Season</TH>
+                <TH>Episode</TH>
                 <TH>Source</TH>
                 <TH>Resolution</TH>
                 <TH>Quality</TH>
@@ -154,7 +182,17 @@ export default function Library() {
               {items.map((item) => (
                 <TR key={item.id}>
                   <TD className="max-w-xs">
-                    <span className="truncate block">{formatTitle(item)}</span>
+                    <span className="truncate block">{seriesLabel(item)}</span>
+                  </TD>
+                  <TD>
+                    <span className="font-mono text-sm text-muted">
+                      {item.source === "sonarr" ? pad2(item.season) : "—"}
+                    </span>
+                  </TD>
+                  <TD>
+                    <span className="font-mono text-sm text-muted">
+                      {item.source === "sonarr" ? pad2(item.episode) : "—"}
+                    </span>
                   </TD>
                   <TD>
                     <Badge variant="neutral" className="capitalize">

@@ -5,13 +5,20 @@ import type { Exclusion, JobPage, LibraryPage, LogPage, ScanStatus, Status } fro
 export const useStatus = () =>
   useQuery({ queryKey: ["status"], queryFn: () => api.get<Status>("/api/status"), refetchInterval: 5000 });
 
-export const useLibrary = (source?: string, eligibility?: string, offset = 0, limit = 100) =>
+export const useLibrary = (
+  source?: string,
+  eligibility?: string,
+  offset = 0,
+  limit = 100,
+  q?: string,
+) =>
   useQuery({
-    queryKey: ["library", source, eligibility, offset, limit],
+    queryKey: ["library", source, eligibility, offset, limit, q],
     queryFn: () => {
       const p = new URLSearchParams();
       if (source) p.set("source", source);
       if (eligibility) p.set("eligibility", eligibility);
+      if (q) p.set("q", q);
       p.set("offset", String(offset));
       p.set("limit", String(limit));
       return api.get<LibraryPage>(`/api/library?${p.toString()}`);

@@ -14,17 +14,26 @@ router = APIRouter(prefix="/api")
 def list_library(
     source: str | None = None,
     eligibility: str | None = None,
+    q: str | None = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
 ):
-    q = session.query(MediaItem)
+    query = session.query(MediaItem)
     if source:
-        q = q.filter(MediaItem.source == source)
+        query = query.filter(MediaItem.source == source)
     if eligibility:
-        q = q.filter(MediaItem.eligibility == eligibility)
-    total = q.count()
-    rows = q.order_by(MediaItem.id).limit(limit).offset(offset).all()
+        query = query.filter(MediaItem.eligibility == eligibility)
+    if q:
+        query = query.filter(MediaItem.title.ilike(f"%{q}%"))
+    total = query.count()
+    # Order by title -> season -> episode so a series' episodes group together.
+    rows = (
+        query.order_by(MediaItem.title, MediaItem.season, MediaItem.episode)
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
     return LibraryPage(total=total, items=[MediaItemOut.model_validate(r) for r in rows])
 
 
