@@ -38,6 +38,7 @@ export function useActions() {
     qc.invalidateQueries({ queryKey: ["library"] });
     qc.invalidateQueries({ queryKey: ["status"] });
     qc.invalidateQueries({ queryKey: ["exclusions"] });
+    qc.invalidateQueries({ queryKey: ["scanStatus"] });
   };
   return {
     scan: useMutation({ mutationFn: (b: object) => api.post("/api/scan", b), onSuccess: invalidate }),
