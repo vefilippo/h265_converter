@@ -39,7 +39,11 @@ def api(monkeypatch):
     monkeypatch.setattr(app_module, "SessionLocal", Session)
 
     app = create_app(start_worker=False)
-    app.dependency_overrides[get_session] = lambda: _yield(Session)
+
+    def _override():
+        yield from _yield(Session)
+
+    app.dependency_overrides[get_session] = _override
 
     client = TestClient(app)
     yield client, Session
