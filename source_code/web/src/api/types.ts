@@ -21,3 +21,5 @@ export interface ScanStatus {
   state: string; detail: Record<string, unknown>;
   started_at: string | null; finished_at: string | null;
 }
+export interface LogLine { seq: number; ts: string; level: string; message: string; }
+export interface LogPage { lines: LogLine[]; last_seq: number; }

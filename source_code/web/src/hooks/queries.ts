@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { Exclusion, JobPage, LibraryPage, ScanStatus, Status } from "../api/types";
+import type { Exclusion, JobPage, LibraryPage, LogPage, ScanStatus, Status } from "../api/types";
 
 export const useStatus = () =>
   useQuery({ queryKey: ["status"], queryFn: () => api.get<Status>("/api/status"), refetchInterval: 5000 });
@@ -30,6 +30,13 @@ export const useExclusions = () =>
 
 export const useScanStatus = () =>
   useQuery({ queryKey: ["scanStatus"], queryFn: () => api.get<ScanStatus>("/api/scan/status"), refetchInterval: 3000 });
+
+export const useLogs = (after: number) =>
+  useQuery({
+    queryKey: ["logs", after],
+    queryFn: () => api.get<LogPage>(`/api/logs?after=${after}`),
+    refetchInterval: 2000,
+  });
 
 export function useActions() {
   const qc = useQueryClient();
