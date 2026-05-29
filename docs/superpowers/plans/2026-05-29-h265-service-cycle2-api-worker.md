@@ -4,6 +4,8 @@
 
 **Goal:** Expose the Cycle 1 engine as a FastAPI HTTP service with a continuous background transcode worker, full job control (cancel queued/running, retry), live SSE progress, and no auth (LAN-bound).
 
+> **Post-implementation hardening (applied during review):** WorkerController got thread-safe start/shutdown + an in-lock cancel re-check; the scan endpoint uses an atomic `ScanStatus.try_start()`; jobs use `session.get(..., options=[joinedload])`, commit-before-refresh on retry, and 409 on non-cancellable states; the SSE stream calls `session.expire_all()` each poll (so it shows live progress) and emits `heartbeat` when idle; `ScanStatus` records `started_at`/`finished_at`; the secret-free pydantic `config.py` is now tracked (the legacy gitignore rule was removed).
+
 **Architecture:** A FastAPI app (uvicorn) reuses the Cycle 1 engine. A `WorkerController` daemon thread drains the job queue one job at a time, woken by enqueue/retry, supporting cancellation by killing the HandBrake subprocess. SQLite runs in WAL mode so API reads coexist with worker writes; each thread/request uses its own session. Routers expose library/scan/jobs/exclusions/status/stream.
 
 **Tech Stack:** Python 3.10, FastAPI, uvicorn, SQLAlchemy 2.0, pydantic-settings, pytest + FastAPI TestClient (httpx).
