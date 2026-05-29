@@ -1,15 +1,18 @@
+import logging
 import paramiko, os
 from pathlib import Path
 from tqdm import tqdm
 from pathlib import PureWindowsPath
+
+log = logging.getLogger("transcoder")
 
 def upload_file_via_sftp(host, port, username, password,
                          local_path, remote_path) -> dict:
                              
     p = PureWindowsPath(remote_path)
     remote_path = f"./{p.as_posix()}"
-    
-    print('Uploading file :' + local_path)
+
+    log.info("Uploading file :%s", local_path)
     
     try:
         file_size = Path(local_path).stat().st_size
@@ -40,7 +43,7 @@ def download_file_via_sftp(host, port, username, password,
                                
     p = PureWindowsPath(remote_path)
     remote_path = f"./{p.as_posix()}"
-    print('Downloading file :' + remote_path)
+    log.info("Downloading file :%s", remote_path)
     
     try:
         transport = paramiko.Transport((host, port))
@@ -64,5 +67,5 @@ def download_file_via_sftp(host, port, username, password,
         return {"success": True, "message": f"Downloaded to {local_path}"}
 
     except Exception as e:
-        print(str(e))
+        log.error("%s", e)
         return {"success": False, "message": str(e)}

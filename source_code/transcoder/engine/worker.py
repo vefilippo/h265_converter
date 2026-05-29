@@ -1,7 +1,10 @@
+import logging
 import os
 import re
 
 from transcoder.config import settings
+
+log = logging.getLogger("transcoder")
 from transcoder.convert import convert_with_handbrake, TranscodeCancelled
 from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 from transcoder.sftp_client import download_file_via_sftp, upload_file_via_sftp
@@ -57,6 +60,7 @@ def process_one_job(
         job.progress = 0
         job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
         session.commit()
+        log.info("Job %s: downloading %s", job.id, item.title)
 
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
@@ -71,10 +75,12 @@ def process_one_job(
             job.progress = pct
             session.commit()
 
+        log.info("Job %s: transcoding %s", job.id, item.title)
         output_file, exclude_flag = convert(tmp_file, out_name, job.preset,
                                             progress_cb=cb, cancel_event=cancel_event)
 
         if output_file is None:
+            log.error("Job %s: HandBrake failed for %s", job.id, item.title)
             job.state = "failed"
             job.error_message = "HandBrake conversion failed"
             job.finished_at = utcnow()
@@ -87,6 +93,7 @@ def process_one_job(
             job.reduction_pct = (job.original_size - job.output_size) / job.original_size * 100
 
         if exclude_flag:
+            log.info("Job %s: skipped %s (output larger)", job.id, item.title)
             session.add(Exclusion(source=item.source, key=_exclusion_key(item),
                                   reason="output_larger"))
             item.eligibility = "excluded"
@@ -98,12 +105,14 @@ def process_one_job(
             item.eligibility = "already_h265"
             job.output_filename = out_name
             job.state = "done"
+            log.info("Job %s: done %s (%.1f%% smaller)", job.id, item.title, job.reduction_pct or 0.0)
 
         job.finished_at = utcnow()
         session.commit()
         return job
 
     except TranscodeCancelled:
+        log.info("Job %s: cancelled %s", job.id, item.title)
         job.state = "cancelled"
         job.error_message = "cancelled by user"
         job.finished_at = utcnow()
@@ -111,6 +120,7 @@ def process_one_job(
         return job
 
     except Exception as exc:  # noqa: BLE001 — record failure, keep draining queue
+        log.error("Job %s: failed %s - %s", job.id, item.title, exc)
         job.state = "failed"
         job.error_message = str(exc)
         job.finished_at = utcnow()
