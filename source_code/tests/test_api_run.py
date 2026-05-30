@@ -17,6 +17,9 @@ def test_run_scans_then_enqueues(api, monkeypatch):
     monkeypatch.setattr(scan_router, "build_clients", lambda: {"sonarr": None, "radarr": None})
     monkeypatch.setattr(scan_router, "discover_sonarr", lambda *a, **k: 0)
     monkeypatch.setattr(scan_router, "discover_radarr", lambda *a, **k: 0)
+    # The run flow opens its own session via SessionLocal imported into the
+    # scan router; point that at the in-memory test DB.
+    monkeypatch.setattr(scan_router, "SessionLocal", Session)
 
     _seed_eligible(Session)
 
