@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from transcoder.logging_setup import init_logging
 from transcoder.db import SessionLocal, init_db
 from transcoder.migrate import migrate_legacy
+from transcoder.engine.worker import reconcile_stale_jobs
 from transcoder.api import state
 from transcoder.config import settings
 from transcoder.api.auth import router as auth_router, require_auth
@@ -22,6 +23,9 @@ def create_app(start_worker: bool = True) -> FastAPI:
         session = SessionLocal()
         try:
             migrate_legacy(session)
+            # Recover jobs orphaned in 'running' by a previous crash/restart so
+            # they re-queue instead of sitting stuck forever.
+            reconcile_stale_jobs(session)
         finally:
             session.close()
         if start_worker:

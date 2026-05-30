@@ -138,6 +138,24 @@ def process_one_job(
                     pass
 
 
+def reconcile_stale_jobs(session) -> int:
+    """Re-queue jobs orphaned in 'running' by a previous crash/restart.
+
+    The worker is serial and nothing is in flight at startup, so any 'running'
+    row is stale — the process died mid-transcode. Reset it to 'queued' (clear
+    progress/started_at) so the worker picks it up again instead of leaving it
+    stuck. Returns the number reset."""
+    rows = session.query(Job).filter(Job.state == "running").all()
+    for job in rows:
+        job.state = "queued"
+        job.progress = 0
+        job.started_at = None
+    if rows:
+        session.commit()
+        log.info("Reconciled %d stale running job(s) to queued", len(rows))
+    return len(rows)
+
+
 def process_queue(session, clients, *, limit: int | None = None, **io) -> int:
     processed = 0
     while True:
