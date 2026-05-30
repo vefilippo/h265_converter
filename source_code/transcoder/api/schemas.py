@@ -1,3 +1,5 @@
+import datetime as dt
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -46,6 +48,9 @@ class JobOut(BaseModel):
     output_filename: str | None = None
     error_message: str | None = None
     title: str | None = None
+    created_at: dt.datetime | None = None
+    started_at: dt.datetime | None = None
+    finished_at: dt.datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

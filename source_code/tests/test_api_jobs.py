@@ -29,6 +29,10 @@ def test_enqueue_and_list_jobs(api):
     assert body["total"] == 1
     assert body["items"][0]["state"] == "queued"
     assert body["items"][0]["title"] == "A"
+    # Timestamps are exposed so the Jobs view can show when a job ran.
+    assert body["items"][0]["created_at"] is not None
+    assert "started_at" in body["items"][0]
+    assert "finished_at" in body["items"][0]
 
 
 def test_cancel_queued_job(api):

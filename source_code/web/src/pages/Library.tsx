@@ -19,7 +19,9 @@ import { cn } from "../lib/cn";
 type ScanApp = "all" | "sonarr" | "radarr";
 type ScanScope = "all" | "new";
 
-const LIMIT = 100;
+// Page size: large enough that a typical series' episodes land on one page,
+// capped at the backend's max (le=500).
+const LIMIT = 250;
 
 function exclusionKey(item: MediaItem): string {
   return item.source === "sonarr"
@@ -83,6 +85,9 @@ export default function Library() {
 
   const rangeStart = total === 0 ? 0 : offset + 1;
   const rangeEnd = Math.min(offset + LIMIT, total);
+  const pageCount = Math.max(1, Math.ceil(total / LIMIT));
+  const currentPage = Math.floor(offset / LIMIT) + 1;
+  const lastOffset = (pageCount - 1) * LIMIT;
 
   return (
     <div className="space-y-6 p-6">
@@ -252,8 +257,19 @@ export default function Library() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <span className="text-sm text-muted">
             {rangeStart}–{rangeEnd} of {total}
+            <span className="ml-2">
+              (page {currentPage} of {pageCount})
+            </span>
           </span>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={offset === 0}
+              onClick={() => setOffset(0)}
+            >
+              First
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -269,6 +285,14 @@ export default function Library() {
               onClick={() => setOffset(offset + LIMIT)}
             >
               Next
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={offset + LIMIT >= total}
+              onClick={() => setOffset(lastOffset)}
+            >
+              Last
             </Button>
           </div>
         </div>

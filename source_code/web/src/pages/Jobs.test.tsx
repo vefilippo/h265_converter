@@ -20,6 +20,9 @@ const ITEMS = [
     output_filename: null,
     error_message: null,
     title: "Show A",
+    created_at: "2026-05-30T09:00:00",
+    started_at: null,
+    finished_at: null,
   },
   {
     id: 2,
@@ -33,6 +36,9 @@ const ITEMS = [
     output_filename: null,
     error_message: "boom",
     title: "Movie X",
+    created_at: "2026-05-30T08:00:00",
+    started_at: "2026-05-30T08:01:00",
+    finished_at: "2026-05-30T10:30:00",
   },
 ];
 
@@ -80,6 +86,24 @@ test("renders both job titles", async () => {
 
   expect(await screen.findByText(/Show A/)).toBeInTheDocument();
   expect(await screen.findByText(/Movie X/)).toBeInTheDocument();
+});
+
+test("shows the job timestamp in the When column", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+
+  await screen.findByText(/Movie X/);
+
+  const rows = screen.getAllByRole("row");
+  const movieRow = rows.find((r) => r.textContent?.includes("Movie X"));
+  // Failed job: When shows the finished time, rendered in the browser locale.
+  const finished = new Date("2026-05-30T10:30:00Z").toLocaleString();
+  expect(within(movieRow!).getByText(finished)).toBeInTheDocument();
+
+  // Queued job (no started/finished): falls back to created_at.
+  const showRow = rows.find((r) => r.textContent?.includes("Show A"));
+  const created = new Date("2026-05-30T09:00:00Z").toLocaleString();
+  expect(within(showRow!).getByText(created)).toBeInTheDocument();
 });
 
 test("clicking Cancel on queued job triggers POST /api/jobs/1/cancel", async () => {

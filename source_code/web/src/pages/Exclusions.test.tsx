@@ -90,9 +90,13 @@ test("shows orphaned status and prunes orphans", async () => {
   wrap(<Exclusions />);
 
   await screen.findByText("Movie X");
-  // the orphaned (unmatched) exclusion is flagged
-  expect(screen.getByText("orphaned")).toBeInTheDocument();
-  expect(screen.getByText("in library")).toBeInTheDocument();
+  // the orphaned (unmatched) exclusion is flagged in its table row (scope to
+  // the row so we don't match the status-filter dropdown's <option> labels)
+  const rows = screen.getAllByRole("row");
+  const movieRow = rows.find((r) => r.textContent?.includes("Movie X"));
+  const showRow = rows.find((r) => r.textContent?.includes("Show A|1|1"));
+  expect(within(movieRow!).getByText("orphaned")).toBeInTheDocument();
+  expect(within(showRow!).getByText("in library")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /remove orphaned/i }));
 
