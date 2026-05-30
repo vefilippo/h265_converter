@@ -105,6 +105,55 @@ test("shows orphaned status and prunes orphans", async () => {
   });
 });
 
+test("filtering by status hides non-matching rows", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Exclusions />);
+
+  await screen.findByText("Show A|1|1");
+  expect(screen.getByText("Movie X")).toBeInTheDocument();
+
+  // Filter to orphaned only -> the matched sonarr row disappears.
+  fireEvent.change(screen.getByLabelText(/filter by status/i), {
+    target: { value: "orphaned" },
+  });
+
+  expect(screen.queryByText("Show A|1|1")).not.toBeInTheDocument();
+  expect(screen.getByText("Movie X")).toBeInTheDocument();
+});
+
+test("filtering by key narrows the list", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Exclusions />);
+
+  await screen.findByText("Show A|1|1");
+  fireEvent.change(screen.getByLabelText(/filter by key/i), {
+    target: { value: "Movie" },
+  });
+
+  expect(screen.queryByText("Show A|1|1")).not.toBeInTheDocument();
+  expect(screen.getByText("Movie X")).toBeInTheDocument();
+});
+
+test("clicking the Source header toggles sort order", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Exclusions />);
+
+  await screen.findByText("Show A|1|1");
+
+  function dataRowKeys(): string[] {
+    return screen
+      .getAllByRole("row")
+      .map((r) => r.querySelector("td.font-mono")?.textContent ?? "")
+      .filter(Boolean);
+  }
+
+  // Default asc by source: radarr ("Movie X") before sonarr ("Show A|1|1").
+  expect(dataRowKeys()).toEqual(["Movie X", "Show A|1|1"]);
+
+  fireEvent.click(screen.getByRole("button", { name: /^Source/ }));
+  expect(dataRowKeys()).toEqual(["Show A|1|1", "Movie X"]);
+});
+
 test("clicking Remove on row 1 triggers DELETE /api/exclusions/1", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("fetch", mockFetch);
