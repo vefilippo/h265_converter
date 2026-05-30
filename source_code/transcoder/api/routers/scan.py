@@ -15,6 +15,7 @@ log = logging.getLogger("transcoder")
 def _run_scan(body: ScanIn):
     # State is already "running" (set atomically by start_scan via try_start()).
     detail = {}
+    log.info("Scan started (app=%s, scope=%s)", body.app, body.scope)
     try:
         clients = build_clients()
         session = SessionLocal()
@@ -28,6 +29,7 @@ def _run_scan(body: ScanIn):
         finally:
             session.close()
         state.scan_status.set("done", **detail)
+        log.info("Scan complete: %s", detail)
     except Exception as exc:  # noqa: BLE001
         log.exception("scan failed")
         state.scan_status.set("error", message=str(exc), **detail)

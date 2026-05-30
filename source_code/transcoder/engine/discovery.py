@@ -1,9 +1,12 @@
 import datetime as dt
+import logging
 
 from transcoder import repo
 from transcoder.engine.eligibility import compute_eligibility
 from transcoder.history import _parse_iso_z
 from transcoder.models import episode_exclusion_key, movie_exclusion_key
+
+log = logging.getLogger("transcoder")
 
 
 def _watermark_iso(ts: dt.datetime) -> str:
@@ -43,8 +46,10 @@ def discover_sonarr(session, client, scope: str = "all", target_title=None,
     elif scope == "new" and watermark is not None:
         series_list = [s for s in series_list if s["id"] in recent_ids]
 
+    log.info("Sonarr scan: checking %d series (scope=%s)", len(series_list), scope)
     count = 0
     for series in series_list:
+        log.info("Checking series: %s", series["title"])
         for ep in client.get_episodes(series["id"]):
             if not ep.get("hasFile"):
                 continue
@@ -79,6 +84,7 @@ def discover_sonarr(session, client, scope: str = "all", target_title=None,
         repo.set_setting(session, "sonarr_watermark", _watermark_iso(newest))
 
     session.commit()
+    log.info("Sonarr scan complete: %d episode file(s) processed", count)
     return count
 
 
@@ -93,8 +99,10 @@ def discover_radarr(session, client, target_movie=None, batch_size: int = _BATCH
     if target_movie:
         rows = [r for r in rows if r["title"].lower() == target_movie.lower()]
 
+    log.info("Radarr scan: checking %d non-H.265 movie(s)", len(rows))
     count = 0
     for r in rows:
+        log.info("Checking movie: %s", r["title"])
         key = movie_exclusion_key(r["title"])
         resolution = r["resolution"] or 0
         repo.upsert_media_item(
@@ -117,4 +125,5 @@ def discover_radarr(session, client, target_movie=None, batch_size: int = _BATCH
             session.commit()
 
     session.commit()
+    log.info("Radarr scan complete: %d movie(s) processed", count)
     return count
