@@ -692,34 +692,29 @@ Expected: FAIL — `jobStateLabel` is not exported.
 
 - [ ] **Step 3: Implement label helper + phase variants**
 
-In `source_code/web/src/components/ui/badge.tsx`:
-
-Add three variant keys to the `Variant` union and `VARIANTS` record:
-
-```ts
-  | "downloading"
-  | "transcoding"
-  | "uploading";
-```
+`badge.tsx` defines variants via `cva(...)` — a `variant: { ... }` object inside
+`badgeVariants`. Add three keys to that object (alongside `queued`, `running`,
+etc.):
 
 ```ts
-  downloading: "bg-cyan-500/15 text-cyan-400",
-  transcoding: "bg-amber-500/15 text-amber-400",
-  uploading: "bg-teal-500/15 text-teal-400",
+        downloading: "bg-cyan-500/15 text-cyan-400",
+        transcoding: "bg-amber-500/15 text-amber-400",
+        uploading: "bg-teal-500/15 text-teal-400",
 ```
 
-Extend `jobStateVariant` to map phases when running — add before `default`:
+`BadgeVariant` is derived from the cva variants via
+`NonNullable<VariantProps<typeof badgeVariants>["variant"]>`, so the new keys
+are valid automatically — no union to edit.
+
+Extend `jobStateVariant` to map phases — add these cases before `default:`:
 
 ```ts
-    case "downloading":
-      return "downloading";
-    case "transcoding":
-      return "transcoding";
-    case "uploading":
-      return "uploading";
+    case "downloading": return "downloading";
+    case "transcoding": return "transcoding";
+    case "uploading": return "uploading";
 ```
 
-Add and export the label helper (place near `jobStateVariant`):
+Add and export the label helper (place after `jobStateVariant`):
 
 ```ts
 export function jobStateLabel(job: { state: string; phase: string | null }): string {
