@@ -24,6 +24,19 @@ function mb(n: number | null | undefined): string {
   return (n / 1048576).toFixed(0) + " MB";
 }
 
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—";
+  // Backend stores naive UTC; append Z (when missing) so the browser renders
+  // the value in the user's local time.
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+}
+
+// The most relevant timestamp: when it finished, else started, else created.
+function jobWhen(job: Job): string {
+  return fmtTime(job.finished_at ?? job.started_at ?? job.created_at);
+}
+
 function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   return (
     <Dialog open onClose={onClose} title={job.title ?? `Job #${job.id}`}>
@@ -41,6 +54,15 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
 
         <dt className="text-muted">Preset</dt>
         <dd>{job.preset ?? "—"}</dd>
+
+        <dt className="text-muted">Created</dt>
+        <dd>{fmtTime(job.created_at)}</dd>
+
+        <dt className="text-muted">Started</dt>
+        <dd>{fmtTime(job.started_at)}</dd>
+
+        <dt className="text-muted">Finished</dt>
+        <dd>{fmtTime(job.finished_at)}</dd>
 
         {job.output_filename && (
           <>
@@ -114,6 +136,7 @@ export default function Jobs() {
                 <TH>State</TH>
                 <TH>Progress</TH>
                 <TH>Reduction</TH>
+                <TH>When</TH>
                 <TH>Actions</TH>
               </TR>
             </THead>
@@ -143,6 +166,11 @@ export default function Jobs() {
                   </TD>
                   <TD className="font-mono">
                     {job.reduction_pct != null ? `${job.reduction_pct.toFixed(1)}%` : "—"}
+                  </TD>
+                  <TD>
+                    <span className="text-sm text-muted whitespace-nowrap">
+                      {jobWhen(job)}
+                    </span>
                   </TD>
                   <TD onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1">

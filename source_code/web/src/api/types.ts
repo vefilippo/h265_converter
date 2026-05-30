@@ -11,6 +11,7 @@ export interface Job {
   preset: string | null; original_size: number | null; output_size: number | null;
   reduction_pct: number | null; output_filename: string | null;
   error_message: string | null; title: string | null;
+  created_at: string | null; started_at: string | null; finished_at: string | null;
 }
 export interface JobPage { total: number; items: Job[]; }
 export interface Exclusion { id: number; source: string; key: string; reason: string; matched: boolean; }
