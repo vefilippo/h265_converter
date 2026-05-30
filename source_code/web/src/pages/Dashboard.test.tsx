@@ -77,6 +77,25 @@ test("renders worker online badge and queue length when worker_alive is true", a
   expect(await screen.findByText("2")).toBeInTheDocument();
 });
 
+test("clicking the Scan now CTA triggers a POST to /api/run", async () => {
+  const mockFetch = makeFetch();
+  vi.stubGlobal("EventSource", FakeES);
+  vi.stubGlobal("fetch", mockFetch);
+
+  wrap(<Dashboard />);
+
+  await screen.findByText("online");
+  fireEvent.click(await screen.findByRole("button", { name: /scan now/i }));
+
+  await waitFor(() => {
+    const hit = mockFetch.mock.calls.some((c) => {
+      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
+      return url.includes("/api/run") && c[1]?.method === "POST";
+    });
+    expect(hit).toBe(true);
+  });
+});
+
 test("clicking Enqueue eligible triggers a POST to /api/enqueue", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("EventSource", FakeES);

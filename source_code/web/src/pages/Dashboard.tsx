@@ -53,9 +53,38 @@ export default function Dashboard() {
     );
   }
 
+  const scanning = scanStatus?.state === "running";
+
   return (
     <div className="space-y-6 p-6">
       <h1 className="font-display text-2xl text-fg">Dashboard</h1>
+
+      {/* Primary CTA: one click discovers new media across Sonarr & Radarr and
+          queues every eligible file (scan all → scope new → enqueue eligible). */}
+      <Card>
+        <CardContent className="pt-6 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="font-display text-lg text-fg">Scan &amp; Transcode</div>
+            <div className="text-sm text-muted mt-0.5">
+              Find new media on Sonarr &amp; Radarr and queue all eligible files.
+            </div>
+          </div>
+          <Button
+            size="lg"
+            onClick={() => actions.run.mutate()}
+            disabled={actions.run.isPending || scanning}
+          >
+            {actions.run.isPending || scanning ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Scanning…
+              </>
+            ) : (
+              "Scan now"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Summary cards row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
