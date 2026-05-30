@@ -5,7 +5,7 @@ from transcoder.api.deps import get_session
 from transcoder.api import state
 from transcoder.api.schemas import EnqueueIn, EnqueueOut, JobOut, JobPage
 from transcoder.engine.queue import enqueue_eligible
-from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key
+from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 
 router = APIRouter(prefix="/api")
 
@@ -61,10 +61,13 @@ def cancel_job(job_id: int, session: Session = Depends(get_session)):
             # async cancel: worker kills the subprocess and flips state later
             state.controller.request_cancel(job_id)
         else:
-            raise HTTPException(
-                status_code=409,
-                detail="job is marked running but not active on the worker; cannot cancel",
-            )
+            # Stale 'running' row: the worker isn't processing this job (e.g.
+            # left over from a crash/restart mid-transcode). It's not actually
+            # running, so cancel it directly instead of leaving it stuck and
+            # un-cancellable.
+            job.state = "cancelled"
+            job.finished_at = utcnow()
+            session.commit()
     elif job.state == "queued":
         job.state = "cancelled"
         session.commit()
