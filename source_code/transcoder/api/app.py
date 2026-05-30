@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends
 from starlette.middleware.sessions import SessionMiddleware
 
 from transcoder.logging_setup import init_logging
-from transcoder.db import SessionLocal, init_db
+from transcoder.db import SessionLocal, init_db, ensure_job_columns
 from transcoder.migrate import migrate_legacy
 from transcoder.engine.worker import reconcile_stale_jobs
 from transcoder.api import state
@@ -20,6 +20,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     async def lifespan(app: FastAPI):
         init_logging()
         init_db()
+        ensure_job_columns()
         session = SessionLocal()
         try:
             migrate_legacy(session)
