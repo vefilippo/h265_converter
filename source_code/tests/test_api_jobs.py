@@ -68,7 +68,7 @@ def test_cancel_running_job_signals_controller(api, monkeypatch):
     assert ev.is_set() is True
 
 
-def test_cancel_running_job_not_on_worker_returns_409(api, monkeypatch):
+def test_cancel_stale_running_job_marks_cancelled(api, monkeypatch):
     client, Session = api
     iid = _seed_item(Session)
     s = Session()
@@ -77,10 +77,12 @@ def test_cancel_running_job_not_on_worker_returns_409(api, monkeypatch):
     jid = s.query(Job).one().id
     s.close()
 
-    # Controller is not running this job (stale 'running' row).
+    # Controller is not running this job (stale 'running' row, e.g. after a
+    # crash mid-transcode). Cancel should succeed and mark it cancelled, not 409.
     monkeypatch.setattr(api_state.controller, "_current_job_id", None)
     r = client.post(f"/api/jobs/{jid}/cancel")
-    assert r.status_code == 409
+    assert r.status_code == 200
+    assert r.json()["state"] == "cancelled"
 
 
 def test_cancel_non_cancellable_state_returns_409(api):
