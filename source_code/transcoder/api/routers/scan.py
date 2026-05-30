@@ -7,6 +7,7 @@ from transcoder.api.schemas import ScanIn
 from transcoder.api.state import build_clients
 from transcoder.db import SessionLocal
 from transcoder.engine.discovery import discover_sonarr, discover_radarr
+from transcoder.engine.queue import enqueue_eligible
 
 router = APIRouter(prefix="/api")
 log = logging.getLogger("transcoder")
@@ -42,6 +43,37 @@ def start_scan(body: ScanIn, background: BackgroundTasks):
     if not state.scan_status.try_start():
         raise HTTPException(status_code=409, detail="a scan is already running")
     background.add_task(_run_scan, body)
+    return {"status": "accepted"}
+
+
+def _run_full():
+    """One-click default flow (the Dashboard CTA): discover everything for new
+    items (app=all, scope=new) then enqueue all eligible items. The continuous
+    background worker drains the resulting queue automatically."""
+    detail = {}
+    log.info("Run started (scan app=all, scope=new, then enqueue eligible)")
+    try:
+        clients = build_clients()
+        session = SessionLocal()
+        try:
+            detail["sonarr"] = discover_sonarr(session, clients["sonarr"], scope="new")
+            detail["radarr"] = discover_radarr(session, clients["radarr"])
+            detail["enqueued"] = enqueue_eligible(session)
+        finally:
+            session.close()
+        state.controller.wake()
+        state.scan_status.set("done", **detail)
+        log.info("Run complete: %s", detail)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("run failed")
+        state.scan_status.set("error", message=str(exc), **detail)
+
+
+@router.post("/run", status_code=202)
+def start_run(background: BackgroundTasks):
+    if not state.scan_status.try_start():
+        raise HTTPException(status_code=409, detail="a scan is already running")
+    background.add_task(_run_full)
     return {"status": "accepted"}
 
 
