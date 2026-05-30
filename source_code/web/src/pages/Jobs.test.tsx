@@ -11,8 +11,9 @@ const ITEMS = [
   {
     id: 1,
     media_item_id: 1,
-    state: "queued",
-    progress: 0,
+    state: "running",
+    phase: "transcoding",
+    progress: 42,
     preset: null,
     original_size: null,
     output_size: null,
@@ -28,6 +29,7 @@ const ITEMS = [
     id: 2,
     media_item_id: 2,
     state: "failed",
+    phase: null,
     progress: 0,
     preset: "H.265 NVENC 1080p",
     original_size: 1000000,
@@ -56,6 +58,11 @@ function makeFetch() {
       return new Response(JSON.stringify(ITEMS[1]), {
         status: 200,
         headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (/\/api\/jobs\/\d+\/logs/.test(url)) {
+      return new Response(JSON.stringify({ log: "hello log" }), {
+        status: 200, headers: { "Content-Type": "application/json" },
       });
     }
     if (url.includes("/api/jobs")) {
@@ -152,4 +159,20 @@ test("clicking Retry on failed job triggers POST /api/jobs/2/retry", async () =>
     });
     expect(retryCall).toBeDefined();
   });
+});
+
+test("running job shows the phase label", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+  expect(await screen.findByText("Transcoding")).toBeInTheDocument();
+});
+
+test("opening details shows the job log", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+  await screen.findByText(/Movie X/);
+  const rows = screen.getAllByRole("row");
+  const movieRow = rows.find((r) => r.textContent?.includes("Movie X"));
+  fireEvent.click(within(movieRow!).getByRole("button", { name: /details/i }));
+  expect(await screen.findByText("hello log")).toBeInTheDocument();
 });
