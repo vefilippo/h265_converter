@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from transcoder.api.deps import get_session
 from transcoder.api import state
-from transcoder.api.schemas import EnqueueIn, EnqueueOut, JobOut, JobPage
+from transcoder.api.schemas import EnqueueIn, EnqueueOut, JobLogOut, JobOut, JobPage
 from transcoder.engine.queue import enqueue_eligible
 from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 
@@ -51,6 +51,12 @@ def list_jobs(
 @router.get("/jobs/{job_id}", response_model=JobOut)
 def get_job(job_id: int, session: Session = Depends(get_session)):
     return _to_out(_get_job(session, job_id))
+
+
+@router.get("/jobs/{job_id}/logs", response_model=JobLogOut)
+def get_job_logs(job_id: int, session: Session = Depends(get_session)):
+    job = _get_job(session, job_id)
+    return JobLogOut(log=job.log or "")
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobOut)

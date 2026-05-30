@@ -138,3 +138,29 @@ def test_job_404(api):
     assert client.get("/api/jobs/999").status_code == 404
     assert client.post("/api/jobs/999/cancel").status_code == 404
     assert client.post("/api/jobs/999/retry").status_code == 404
+
+
+def test_jobs_list_includes_phase(api):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add(Job(media_item_id=iid, state="running", phase="transcoding"))
+    s.commit(); s.close()
+    body = client.get("/api/jobs").json()
+    assert body["items"][0]["phase"] == "transcoding"
+
+
+def test_job_logs_endpoint_returns_log(api):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add(Job(media_item_id=iid, state="done", log="line one\nline two"))
+    s.commit(); jid = s.query(Job).one().id; s.close()
+    r = client.get(f"/api/jobs/{jid}/logs")
+    assert r.status_code == 200
+    assert r.json()["log"] == "line one\nline two"
+
+
+def test_job_logs_endpoint_404(api):
+    client, _ = api
+    assert client.get("/api/jobs/999/logs").status_code == 404
