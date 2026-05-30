@@ -1,7 +1,26 @@
 import os
 
-from transcoder.engine.worker import process_one_job, process_queue
+from transcoder.engine.worker import process_one_job, process_queue, reconcile_stale_jobs
 from transcoder.models import Exclusion, Job, MediaItem
+
+
+def test_reconcile_stale_jobs_requeues_only_running(session):
+    item = MediaItem(source="sonarr", external_id="1", title="A", season=1,
+                     episode=1, remote_path="/x", resolution=1080,
+                     eligibility="needs_transcode")
+    session.add(item)
+    session.commit()
+    session.add(Job(media_item_id=item.id, state="running", progress=42))
+    session.add(Job(media_item_id=item.id, state="queued"))
+    session.add(Job(media_item_id=item.id, state="done"))
+    session.commit()
+
+    n = reconcile_stale_jobs(session)
+    assert n == 1
+    # The stale 'running' became 'queued'; the others are untouched.
+    assert sorted(j.state for j in session.query(Job).all()) == ["done", "queued", "queued"]
+    # The reset job's progress was cleared.
+    assert session.query(Job).filter_by(progress=42).all() == []
 
 
 class FakeClient:
