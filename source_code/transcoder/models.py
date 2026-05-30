@@ -67,7 +67,8 @@ class Job(Base):
     reduction_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     output_filename: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    log_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phase: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    log: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     media_item: Mapped["MediaItem"] = relationship(back_populates="jobs")
 
