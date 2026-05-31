@@ -48,6 +48,8 @@ class JobOut(BaseModel):
     output_filename: str | None = None
     error_message: str | None = None
     title: str | None = None
+    season: int | None = None
+    episode: int | None = None
     phase: str | None = None
     created_at: dt.datetime | None = None
     started_at: dt.datetime | None = None
