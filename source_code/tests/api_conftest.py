@@ -37,6 +37,9 @@ def api(monkeypatch):
     monkeypatch.setattr(app_module, "init_db", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "migrate_legacy", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "SessionLocal", Session)
+    monkeypatch.setattr(app_module, "ensure_job_columns", lambda *a, **k: None)
+    monkeypatch.setattr(app_module, "reconcile_stale_jobs", lambda *a, **k: None)
+    monkeypatch.setattr(app_module, "init_logging", lambda *a, **k: None)
 
     app = create_app(start_worker=False)
 

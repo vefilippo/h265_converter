@@ -18,7 +18,7 @@ log = logging.getLogger("transcoder")
 def create_app(start_worker: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        init_logging()
+        init_logging("api")
         init_db()
         ensure_job_columns()
         session = SessionLocal()
