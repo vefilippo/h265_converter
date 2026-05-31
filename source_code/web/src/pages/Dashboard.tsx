@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Badge, jobStateVariant, jobStateLabel, jobTitle } from "../components/ui/badge";
+import { usePageTitle } from '../hooks/usePageTitle';
+import { Badge, jobStateVariant, jobStateLabel, jobTitle, eligibilityVariant } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
@@ -19,7 +20,15 @@ import { useActions, useJobs, useScanStatus, useStatus } from "../hooks/queries"
 type ScanApp = "all" | "sonarr" | "radarr";
 type ScanScope = "all" | "new";
 
+const ELIGIBILITY_LABEL: Record<string, string> = {
+  needs_transcode: "Needs transcode",
+  already_h265: "Already H.265",
+  below_1080p: "Below 1080p",
+  excluded: "Excluded",
+};
+
 export default function Dashboard() {
+  usePageTitle("Dashboard");
   const { data: status, isLoading: statusLoading } = useStatus();
   const { data: queuedJobs, isLoading: jobsLoading } = useJobs("queued");
   const { data: scanStatus } = useScanStatus();
@@ -64,7 +73,7 @@ export default function Dashboard() {
       <Card>
         <CardContent className="pt-6 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="font-display text-lg text-fg">Scan &amp; Transcode</div>
+            <div className="font-display text-lg text-fg">Scan &amp; Enqueue</div>
             <div className="text-sm text-muted mt-0.5">
               Find new media on Sonarr &amp; Radarr and queue all eligible files.
             </div>
@@ -80,7 +89,7 @@ export default function Dashboard() {
                 Scanning…
               </>
             ) : (
-              "Scan now"
+              "Scan & Enqueue"
             )}
           </Button>
         </CardContent>
@@ -151,7 +160,13 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <span className="text-muted">Idle</span>
+            <div className="flex flex-col items-center py-6 text-center">
+              <svg className="h-8 w-8 text-muted mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.82m5.84-2.56a14.953 14.953 0 006.16-12.12A14.953 14.953 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.82m2.56-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7a14.953 14.953 0 01-12.12 6.16 14.953 14.953 0 018.41-9.37m7.957-3.965A9 9 0 0121 12c0 2.41-.945 4.6-2.487 6.218" />
+              </svg>
+              <p className="text-sm text-muted font-medium">Worker idle</p>
+              <p className="text-xs text-muted mt-1">No job is currently running</p>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -176,9 +191,9 @@ export default function Dashboard() {
                   <TR key={i}>
                     <TD className="capitalize">{row.source}</TD>
                     <TD>
-                      <span className="font-mono text-xs text-muted">
-                        {row.eligibility}
-                      </span>
+                      <Badge variant={eligibilityVariant(row.eligibility)}>
+                        {ELIGIBILITY_LABEL[row.eligibility] ?? row.eligibility}
+                      </Badge>
                     </TD>
                     <TD>
                       <span className="font-mono">{row.count}</span>
@@ -236,7 +251,22 @@ export default function Dashboard() {
               </TBody>
             </Table>
           ) : (
-            <span className="text-muted text-sm">No queued jobs</span>
+            <div className="flex flex-col items-center py-6 text-center">
+              <svg className="h-8 w-8 text-muted mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+              </svg>
+              <p className="text-sm text-muted font-medium">Queue is empty</p>
+              <p className="text-xs text-muted mt-1">
+                Use{" "}
+                <button
+                  onClick={() => actions.run.mutate()}
+                  className="text-accent hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 rounded"
+                >
+                  Scan &amp; Enqueue
+                </button>
+                {" "}to find and queue eligible media
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -247,6 +277,7 @@ export default function Dashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="text-xs text-muted mb-3 font-medium">Advanced controls</p>
           <div className="flex flex-wrap items-center gap-3">
             <Button
               onClick={() => setScanOpen(true)}
@@ -292,7 +323,8 @@ export default function Dashboard() {
                 <button
                   key={app}
                   onClick={() => setScanApp(app)}
-                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
+                  aria-pressed={scanApp === app}
+                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
                     scanApp === app
                       ? "border-accent bg-accent/15 text-accent"
                       : "border-border text-muted hover:bg-surface"
@@ -313,7 +345,8 @@ export default function Dashboard() {
                 <button
                   key={scope}
                   onClick={() => setScanScope(scope)}
-                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
+                  aria-pressed={scanScope === scope}
+                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
                     scanScope === scope
                       ? "border-accent bg-accent/15 text-accent"
                       : "border-border text-muted hover:bg-surface"

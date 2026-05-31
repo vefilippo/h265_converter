@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { usePageTitle } from '../hooks/usePageTitle';
 import { Badge, eligibilityVariant } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Spinner } from "../components/ui/spinner";
@@ -42,6 +44,7 @@ function pad2(n: number | null): string {
 }
 
 export default function Library() {
+  usePageTitle("Library");
   const [source, setSource] = useState<string | undefined>(undefined);
   const [eligibility, setEligibility] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -169,7 +172,21 @@ export default function Library() {
       ) : items.length === 0 ? (
         <div className="text-center py-16 text-muted">No items</div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <>
+        {total > 0 && (
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <span className="text-sm text-muted">
+              {rangeStart}–{rangeEnd} of {total}
+              <span className="ml-2">(page {currentPage} of {pageCount})</span>
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - LIMIT))}>Prev</Button>
+              <Button variant="outline" size="sm" disabled={offset + LIMIT >= total} onClick={() => setOffset(offset + LIMIT)}>Next</Button>
+            </div>
+          </div>
+        )}
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
           <Table>
             <THead>
               <TR>
@@ -232,7 +249,7 @@ export default function Library() {
                       )}
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant="destructive"
                         onClick={() =>
                           actions.addExclusion.mutate({
                             source: item.source,
@@ -249,7 +266,9 @@ export default function Library() {
               ))}
             </TBody>
           </Table>
-        </div>
+          </CardContent>
+        </Card>
+        </>
       )}
 
       {/* Pagination */}

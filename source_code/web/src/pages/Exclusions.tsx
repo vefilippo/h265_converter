@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useExclusions, useActions } from "../hooks/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -16,6 +17,7 @@ function statusRank(ex: Exclusion): number {
 }
 
 export default function Exclusions() {
+  usePageTitle("Exclusions");
   const { data: exclusions, isLoading } = useExclusions();
   const actions = useActions();
 
@@ -93,17 +95,25 @@ export default function Exclusions() {
             <select
               value={source}
               onChange={(e) => setSource(e.target.value as "sonarr" | "radarr")}
+              aria-label="Source"
               className="h-9 rounded-md border border-border bg-elevated px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
             >
               <option value="sonarr">sonarr</option>
               <option value="radarr">radarr</option>
             </select>
-            <Input
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder={source === "sonarr" ? "Title|Season|Episode" : "Title"}
-              className="flex-1 min-w-48"
-            />
+            <div className="flex-1 min-w-48">
+              <Input
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder={source === "sonarr" ? "Title|Season|Episode" : "Title"}
+                className="w-full"
+              />
+              <p className="text-xs text-muted mt-1">
+                {source === "sonarr"
+                  ? "Format: Title|Season|Episode (e.g. Breaking Bad|1|1)"
+                  : "Format: Title (e.g. Inception)"}
+              </p>
+            </div>
             <Button
               onClick={handleAdd}
               disabled={actions.addExclusion.isPending || !key.trim()}

@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import { Button } from "./ui/button";
+import { useStatus } from "../hooks/queries";
 
 const navLinks = [
   { to: "/", label: "Dashboard" },
@@ -9,10 +10,12 @@ const navLinks = [
   { to: "/jobs", label: "Jobs" },
   { to: "/exclusions", label: "Exclusions" },
   { to: "/logs", label: "Logs" },
+  { to: "/settings", label: "Settings" },
 ];
 
 export function Nav() {
   const queryClient = useQueryClient();
+  const { data: status } = useStatus();
 
   async function handleLogout() {
     try {
@@ -38,8 +41,9 @@ export function Nav() {
               className={({ isActive }) =>
                 [
                   "flex items-center px-3 py-2 rounded-md text-sm transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                   isActive
-                    ? "bg-surface text-accent font-medium"
+                    ? "bg-elevated text-accent font-medium"
                     : "text-muted hover:bg-elevated hover:text-fg",
                 ].join(" ")
               }
@@ -49,6 +53,18 @@ export function Nav() {
           </li>
         ))}
       </ul>
+
+      {status !== undefined && (
+        <div className="px-4 py-2 border-t border-border flex items-center gap-2">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${status.worker_alive ? "bg-accent" : "bg-muted"}`}
+            aria-hidden="true"
+          />
+          <span className="text-xs text-muted">
+            Worker {status.worker_alive ? "online" : "offline"}
+          </span>
+        </div>
+      )}
 
       <div className="p-3 border-t border-border">
         <Button

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import cronstrue from 'cronstrue';
 import { Button } from '../components/ui/button';
@@ -145,6 +146,7 @@ function DirtyDot() {
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  usePageTitle("Settings");
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
 
@@ -206,20 +208,22 @@ export default function Settings() {
     setTransDirty(false);
   }, [data]);
 
-  const mut = useMutation({
-    mutationFn: updateSettings,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
-  });
+  const onSuccess = () => qc.invalidateQueries({ queryKey: ['settings'] });
+  const schedMut = useMutation({ mutationFn: updateSettings, onSuccess });
+  const connMut = useMutation({ mutationFn: updateSettings, onSuccess });
+  const transMut = useMutation({ mutationFn: updateSettings, onSuccess });
+  const secMut = useMutation({ mutationFn: updateSettings, onSuccess });
 
   async function save(
     payload: SettingsUpdate,
+    mutateAsync: (p: SettingsUpdate) => Promise<unknown>,
     setSaved: (v: boolean) => void,
     setError: (v: string | null) => void,
     setDirty?: (v: boolean) => void,
   ) {
     setError(null);
     try {
-      await mut.mutateAsync(payload);
+      await mutateAsync(payload);
       setSaved(true);
       setDirty?.(false);
       setTimeout(() => setSaved(false), 3000);
@@ -315,14 +319,14 @@ export default function Settings() {
                 onClick={() => save(
                   { scheduler_cron: schedEnabled && cronIsValid ? cron || null : null,
                     scheduler_run_at_startup: runAtStartup ? 'true' : 'false' },
-                  setSchedSaved, setSchedError, setSchedDirty,
+                  schedMut.mutateAsync, setSchedSaved, setSchedError, setSchedDirty,
                 )}
-                disabled={mut.isPending || (schedEnabled && !cronIsValid)}
-                aria-busy={mut.isPending}
+                disabled={schedMut.isPending || (schedEnabled && !cronIsValid)}
+                aria-busy={schedMut.isPending}
                 aria-label="Save Scheduler settings">
-                {mut.isPending ? 'Saving…' : 'Save'}
+                {schedMut.isPending ? 'Saving…' : 'Save'}
               </Button>
-              <StatusMessage saving={mut.isPending} saved={schedSaved} error={schedError} />
+              <StatusMessage saving={schedMut.isPending} saved={schedSaved} error={schedError} />
             </div>
           </CardContent>
         </Card>
@@ -341,7 +345,7 @@ export default function Settings() {
             <div className="grid grid-cols-2 gap-4">
               <SubCard title="Sonarr">
                 <LabeledField htmlFor="sonarr-url" label="URL">
-                  <Input id="sonarr-url" value={sonarrUrl}
+                  <Input id="sonarr-url" value={sonarrUrl} className="w-full"
                     onChange={e => { setSonarrUrl(e.target.value); setConnDirty(true); }} />
                 </LabeledField>
                 <LabeledField htmlFor="sonarr-key" label="API key">
@@ -353,7 +357,7 @@ export default function Settings() {
 
               <SubCard title="Radarr">
                 <LabeledField htmlFor="radarr-url" label="URL">
-                  <Input id="radarr-url" value={radarrUrl}
+                  <Input id="radarr-url" value={radarrUrl} className="w-full"
                     onChange={e => { setRadarrUrl(e.target.value); setConnDirty(true); }} />
                 </LabeledField>
                 <LabeledField htmlFor="radarr-key" label="API key">
@@ -369,18 +373,18 @@ export default function Settings() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <LabeledField htmlFor="sftp-host" label="Host">
-                    <Input id="sftp-host" value={sftpHost}
+                    <Input id="sftp-host" value={sftpHost} className="w-full"
                       onChange={e => { setSftpHost(e.target.value); setConnDirty(true); }} />
                   </LabeledField>
                 </div>
                 <LabeledField htmlFor="sftp-port" label="Port">
-                  <Input id="sftp-port" value={sftpPort}
+                  <Input id="sftp-port" value={sftpPort} className="w-full"
                     onChange={e => { setSftpPort(e.target.value); setConnDirty(true); }} />
                 </LabeledField>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <LabeledField htmlFor="sftp-user" label="Username">
-                  <Input id="sftp-user" value={sftpUser}
+                  <Input id="sftp-user" value={sftpUser} className="w-full"
                     onChange={e => { setSftpUser(e.target.value); setConnDirty(true); }} />
                 </LabeledField>
                 <LabeledField htmlFor="sftp-pass" label="Password">
@@ -398,14 +402,14 @@ export default function Settings() {
                     radarr_url: radarrUrl, radarr_api_key: radarrKey,
                     sftp_host: sftpHost, sftp_port: sftpPort,
                     sftp_username: sftpUser, sftp_password: sftpPass },
-                  setConnSaved, setConnError, setConnDirty,
+                  connMut.mutateAsync, setConnSaved, setConnError, setConnDirty,
                 )}
-                disabled={mut.isPending}
-                aria-busy={mut.isPending}
+                disabled={connMut.isPending}
+                aria-busy={connMut.isPending}
                 aria-label="Save Connections settings">
-                {mut.isPending ? 'Saving…' : 'Save'}
+                {connMut.isPending ? 'Saving…' : 'Save'}
               </Button>
-              <StatusMessage saving={mut.isPending} saved={connSaved} error={connError} />
+              <StatusMessage saving={connMut.isPending} saved={connSaved} error={connError} />
             </div>
           </CardContent>
         </Card>
@@ -438,14 +442,14 @@ export default function Settings() {
                 onClick={() => save(
                   { handbrake_cli: hbCli, handbrake_preset_1080: hbPreset1080,
                     handbrake_preset_4k: hbPreset4k },
-                  setTransSaved, setTransError, setTransDirty,
+                  transMut.mutateAsync, setTransSaved, setTransError, setTransDirty,
                 )}
-                disabled={mut.isPending}
-                aria-busy={mut.isPending}
+                disabled={transMut.isPending}
+                aria-busy={transMut.isPending}
                 aria-label="Save Encoder settings">
-                {mut.isPending ? 'Saving…' : 'Save'}
+                {transMut.isPending ? 'Saving…' : 'Save'}
               </Button>
-              <StatusMessage saving={mut.isPending} saved={transSaved} error={transError} />
+              <StatusMessage saving={transMut.isPending} saved={transSaved} error={transError} />
             </div>
           </CardContent>
         </Card>
@@ -487,14 +491,14 @@ export default function Settings() {
                   if (pwMismatch) { setSecError('Passwords do not match'); return; }
                   if (!newPw) { setSecError('New password is required'); return; }
                   save({ current_password: currentPw, new_password: newPw },
-                    setSecSaved, setSecError);
+                    secMut.mutateAsync, setSecSaved, setSecError);
                 }}
-                disabled={mut.isPending || pwMismatch}
-                aria-busy={mut.isPending}
+                disabled={secMut.isPending || pwMismatch}
+                aria-busy={secMut.isPending}
                 aria-label="Save Security settings">
-                {mut.isPending ? 'Saving…' : 'Save'}
+                {secMut.isPending ? 'Saving…' : 'Save'}
               </Button>
-              <StatusMessage saving={mut.isPending} saved={secSaved} error={secError} />
+              <StatusMessage saving={secMut.isPending} saved={secSaved} error={secError} />
             </div>
           </CardContent>
         </Card>

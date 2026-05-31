@@ -42,6 +42,11 @@ CYCLE 5 — Quick Wins + Windows Integration
         → backup_db() copies transcoder.db → transcoder.db.bak on every
           API startup (before migrations run).
 
+[x] 7. Scheduler, run a scan when?
+        → APScheduler (cron) inside FastAPI lifespan; Settings page with
+          cron expression, run-at-startup toggle, next-run display.
+          DB-backed runtime config overrides .env at runtime.
+
 ----------------------------------------------------------------------
 LESSONS LEARNED
 ----------------------------------------------------------------------

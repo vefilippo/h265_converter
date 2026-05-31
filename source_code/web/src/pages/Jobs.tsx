@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useActions, useJobs, useJobLogs } from "../hooks/queries";
 import type { Job } from "../api/types";
 import { Badge, jobStateVariant, jobStateLabel, jobTitle } from "../components/ui/badge";
@@ -91,13 +92,29 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
 }
 
 export default function Jobs() {
+  usePageTitle("Jobs");
   const [stateFilter, setStateFilter] = useState("");
   const [detailJob, setDetailJob] = useState<Job | null>(null);
 
   const { data, isLoading } = useJobs(stateFilter || undefined);
+  const { data: allData } = useJobs(undefined); // all jobs for count badges
   const actions = useActions();
 
   const jobs = data?.items ?? [];
+
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (allData?.items ?? []).forEach(j => {
+      counts[j.state] = (counts[j.state] ?? 0) + 1;
+    });
+    return counts;
+  }, [allData]);
+
+  function pillLabel(opt: { value: string; label: string }): string {
+    if (opt.value === "") return allData ? `All (${allData.total})` : "All";
+    const c = stateCounts[opt.value];
+    return c != null ? `${opt.label} (${c})` : opt.label;
+  }
 
   return (
     <div className="space-y-4">
@@ -110,14 +127,16 @@ export default function Jobs() {
               <button
                 key={opt.value}
                 onClick={() => setStateFilter(opt.value)}
+                aria-pressed={stateFilter === opt.value}
                 className={cn(
                   "px-2 py-0.5 rounded-full text-xs font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                   stateFilter === opt.value
                     ? "bg-accent text-accent-fg"
                     : "bg-surface text-muted hover:text-fg"
                 )}
               >
-                {opt.label}
+                {pillLabel(opt)}
               </button>
             ))}
           </div>
@@ -171,11 +190,17 @@ export default function Jobs() {
                         </span>
                       </div>
                     ) : (
-                      <Badge variant={jobStateVariant(job.state)}>{jobStateLabel(job)}</Badge>
+                      <span className="text-muted">—</span>
                     )}
                   </TD>
-                  <TD className="font-mono">
-                    {job.reduction_pct != null ? `${job.reduction_pct.toFixed(1)}%` : "—"}
+                  <TD>
+                    {job.reduction_pct != null ? (
+                      <span className={job.reduction_pct > 0 ? "text-accent font-mono" : "text-state-failed font-mono"}>
+                        {job.reduction_pct.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
                   </TD>
                   <TD>
                     <span className="text-sm text-muted whitespace-nowrap">

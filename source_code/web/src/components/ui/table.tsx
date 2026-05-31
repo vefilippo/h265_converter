@@ -27,15 +27,16 @@ export function TR({ className, ...props }: HTMLAttributes<HTMLTableRowElement>)
   );
 }
 
-export function TH({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
+export function TH({ className, scope, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn("text-left font-medium px-3 py-2", className)}
+      scope={scope ?? "col"}
+      className={cn("text-left font-medium px-4 py-3", className)}
       {...props}
     />
   );
 }
 
 export function TD({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("px-3 py-2", className)} {...props} />;
+  return <td className={cn("px-4 py-3", className)} {...props} />;
 }
