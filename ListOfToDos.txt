@@ -1,0 +1,79 @@
+============================
+ H265 Transcoder — To-Do List
+============================
+
+STATUS KEY:  [x] Done   [~] Partial / In Progress   [ ] Not started
+
+----------------------------------------------------------------------
+CYCLE 5 — Quick Wins + Windows Integration
+----------------------------------------------------------------------
+
+[x] 1. Create an icon in the windows bar (where OneDrive / network etc
+        is) so that I know it is running and on click I can open the
+        weblink.
+        → tray.pyw: green/grey circle, right-click menu with Open UI /
+          Start / Stop / Exit. Launch via scripts\tray.bat.
+        Known issues still open:
+          - Start button: server launches but exits silently; output is
+            now captured to log\server_start.log for diagnosis.
+          - Stop button: works (finds PID via netstat + taskkill).
+          - Exit button: now force-exits with os._exit(0).
+
+[x] 2. Integrate status changes with windows notifications.
+        → winotify toasts on: job done, job failed, queue cleared.
+          Tray authenticates with the API via cookie session so the
+          /api/status poll no longer 401s.
+
+[x] 3. Jobs should contain the name of the title + season & episode in
+        case of a TV show.
+        → Jobs page, Dashboard, and detail dialog all show
+          "Show Name — S01E05" format.
+
+[x] 4. Cleanup the logging feature — too many blank files.
+        → One log\api.log (web server) + one log\cli.log (CLI worker).
+          Rotating 5 MB / 3 backups. Fixed basicConfig no-op bug with
+          uvicorn by directly adding RotatingFileHandler to root logger.
+
+[ ] 5. Make an overall cleanup of things that are not needed anymore /
+        from the old solution. Work interactively to assess what to keep.
+        → Deferred — needs interactive session.
+
+[x] 6. Allow a backup mechanism for migrations.
+        → backup_db() copies transcoder.db → transcoder.db.bak on every
+          API startup (before migrations run).
+
+----------------------------------------------------------------------
+LESSONS LEARNED
+----------------------------------------------------------------------
+
+1. logging.basicConfig() is a no-op when uvicorn pre-configures the
+   root logger before the FastAPI lifespan runs. Fix: add handlers
+   directly to logging.getLogger() with a guard to avoid duplicates.
+
+2. Windows venv health check: test for pyvenv.cfg, not python.exe.
+   A broken venv can have python.exe without pyvenv.cfg (missing pip,
+   packages not installed). build.bat now wipes and recreates if
+   pyvenv.cfg is absent.
+
+3. pythonw.exe fails silently. Any crash in a windowless Python process
+   is invisible. Always redirect stdout/stderr to a log file when
+   launching subprocesses via pythonw. tray.pyw now writes to
+   log\tray.log and log\server_start.log.
+
+4. pystray icon.stop() does not always exit the process on Windows —
+   the Win32 message loop can leave threads dangling. Use os._exit(0)
+   after icon.stop() to force a clean exit.
+
+5. Tray Start/Stop only control processes the tray itself launched.
+   If the server was started externally (scheduled task, run.bat), the
+   tray's _server_proc is None. Fix: Stop uses netstat + taskkill to
+   find and kill any process on port 8765; Start checks _is_up() first
+   to avoid double-starting.
+
+6. New Windows tray icons land in the hidden overflow area by default
+   (the ^ arrow in the taskbar). Users must manually drag them to the
+   visible area. Not a bug — just a Windows 11 UX thing to document.
+
+7. The API session cookie must be shared across all urllib requests.
+   Use http.cookiejar.CookieJar + urllib.request.build_opener so the
+   login cookie persists for all subsequent API calls from the tray.
