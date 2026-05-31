@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 _REDACTED = "••••••••"
 _CREDENTIAL_KEYS = {
     "sonarr_api_key", "radarr_api_key",
-    "sftp_username", "sftp_password",
+    "sftp_password",
 }
 
 
@@ -37,7 +37,7 @@ def get_settings(db: Session = Depends(get_db)):
         radarr_api_key=_mask(db, "radarr_api_key", cfg.RADARR_API_KEY),
         sftp_host=get_effective(db, "sftp_host", cfg.SFTP_HOST),
         sftp_port=get_effective(db, "sftp_port", str(cfg.SFTP_PORT)),
-        sftp_username=_mask(db, "sftp_username", cfg.SFTP_USERNAME),
+        sftp_username=get_effective(db, "sftp_username", cfg.SFTP_USERNAME),
         sftp_password=_mask(db, "sftp_password", cfg.SFTP_PASSWORD),
         handbrake_cli=get_effective(db, "handbrake_cli", cfg.HANDBRAKE_CLI),
         handbrake_preset_1080=get_effective(db, "handbrake_preset_1080", cfg.PRESET_1080),
@@ -67,7 +67,7 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         updated.append("app_password")
 
     simple_fields = [
-        "sonarr_url", "radarr_url", "sftp_host", "sftp_port",
+        "sonarr_url", "radarr_url", "sftp_host", "sftp_port", "sftp_username",
         "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
         "scheduler_run_at_startup",
     ]

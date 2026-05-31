@@ -196,7 +196,7 @@ export default function Settings() {
     setRadarrKey(data.radarr_api_key || REDACTED);
     setSftpHost(data.sftp_host);
     setSftpPort(data.sftp_port);
-    setSftpUser(data.sftp_username || REDACTED);
+    setSftpUser(data.sftp_username || '');
     setSftpPass(data.sftp_password || REDACTED);
     setHbCli(data.handbrake_cli);
     setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
@@ -380,8 +380,8 @@ export default function Settings() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <LabeledField htmlFor="sftp-user" label="Username">
-                  <MaskedInput id="sftp-user" fieldLabel="SFTP username"
-                    value={sftpUser} onChange={v => { setSftpUser(v); setConnDirty(true); }} />
+                  <Input id="sftp-user" value={sftpUser}
+                    onChange={e => { setSftpUser(e.target.value); setConnDirty(true); }} />
                 </LabeledField>
                 <LabeledField htmlFor="sftp-pass" label="Password">
                   <MaskedInput id="sftp-pass" fieldLabel="SFTP password"
