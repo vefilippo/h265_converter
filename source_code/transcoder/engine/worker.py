@@ -1,3 +1,4 @@
+import datetime as _dt
 import logging
 import os
 import re
@@ -30,6 +31,27 @@ def _output_name(item) -> str:
     return f"{title} ({item.year}) [h265] [{item.languages}] {item.quality} {settings.RELEASE_TAG}.mkv"
 
 
+def job_log(session, job, msg):
+    """Append a timestamped line to job.log and emit to the global logger."""
+    stamp = _dt.datetime.now().strftime("%H:%M:%S")
+    line = f"[{stamp}] {msg}"
+    job.log = (job.log + "\n" + line) if job.log else line
+    log.info("Job %s: %s", job.id, msg)
+
+
+def _progress_writer(session, job):
+    """Return a progress_cb that commits only when the integer percent changes,
+    so per-chunk SFTP callbacks don't hammer SQLite."""
+    last = {"pct": -1}
+    def cb(pct):
+        pct = int(pct)
+        if pct != last["pct"]:
+            last["pct"] = pct
+            job.progress = pct
+            session.commit()
+    return cb
+
+
 def _exclusion_key(item) -> str:
     if item.source == "sonarr":
         return episode_exclusion_key(item.title, item.season, item.episode)
@@ -56,31 +78,36 @@ def process_one_job(
         # recorded as 'failed' (otherwise the job stays 'queued' and
         # process_queue would re-pick it forever).
         job.state = "running"
+        job.phase = "downloading"
         job.started_at = utcnow()
         job.progress = 0
         job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
         session.commit()
-        log.info("Job %s: downloading %s", job.id, item.title)
+        job_log(session, job, f"Downloading {item.title}")
 
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
         tmp_file = os.path.join("./tmp", os.path.basename(file_path))
-        download(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
-                 settings.SFTP_PASSWORD, file_path, tmp_file)
+        dl = download(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                      settings.SFTP_PASSWORD, file_path, tmp_file,
+                      progress_cb=_progress_writer(session, job))
+        if isinstance(dl, dict) and dl.get("success") is False:
+            raise RuntimeError(f"download failed: {dl.get('message')}")
 
         original_size = os.path.getsize(tmp_file)
         out_name = _output_name(item)
 
-        def cb(pct):
-            job.progress = pct
-            session.commit()
-
-        log.info("Job %s: transcoding %s", job.id, item.title)
+        job.phase = "transcoding"
+        job.progress = 0
+        session.commit()
+        job_log(session, job, f"Transcoding {item.title} (preset {job.preset})")
         output_file, exclude_flag = convert(tmp_file, out_name, job.preset,
-                                            progress_cb=cb, cancel_event=cancel_event)
+                                            progress_cb=_progress_writer(session, job),
+                                            cancel_event=cancel_event)
 
         if output_file is None:
-            log.error("Job %s: HandBrake failed for %s", job.id, item.title)
+            job_log(session, job, "HandBrake failed")
+            job.phase = None
             job.state = "failed"
             job.error_message = "HandBrake conversion failed"
             job.finished_at = utcnow()
@@ -93,26 +120,36 @@ def process_one_job(
             job.reduction_pct = (job.original_size - job.output_size) / job.original_size * 100
 
         if exclude_flag:
-            log.info("Job %s: skipped %s (output larger)", job.id, item.title)
+            job_log(session, job, "Skipped (output larger)")
+            job.phase = None
             session.add(Exclusion(source=item.source, key=_exclusion_key(item),
                                   reason="output_larger"))
             item.eligibility = "excluded"
             job.state = "skipped_larger"
         else:
-            upload(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
-                   settings.SFTP_PASSWORD, output_file, settings.WATCH_FOLDER + out_name)
+            job.phase = "uploading"
+            job.progress = 0
+            session.commit()
+            job_log(session, job, f"Uploading {out_name}")
+            up = upload(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
+                        settings.SFTP_PASSWORD, output_file, settings.WATCH_FOLDER + out_name,
+                        progress_cb=_progress_writer(session, job))
+            if isinstance(up, dict) and up.get("success") is False:
+                raise RuntimeError(f"upload failed: {up.get('message')}")
             client.manual_import_one(output_file)
             item.eligibility = "already_h265"
             job.output_filename = out_name
             job.state = "done"
-            log.info("Job %s: done %s (%.1f%% smaller)", job.id, item.title, job.reduction_pct or 0.0)
+            job_log(session, job, f"Done {item.title} ({job.reduction_pct or 0.0:.1f}% smaller)")
 
+        job.phase = None
         job.finished_at = utcnow()
         session.commit()
         return job
 
     except TranscodeCancelled:
-        log.info("Job %s: cancelled %s", job.id, item.title)
+        job.phase = None
+        job_log(session, job, "Cancelled")
         job.state = "cancelled"
         job.error_message = "cancelled by user"
         job.finished_at = utcnow()
@@ -120,7 +157,8 @@ def process_one_job(
         return job
 
     except Exception as exc:  # noqa: BLE001 — record failure, keep draining queue
-        log.error("Job %s: failed %s - %s", job.id, item.title, exc)
+        job.phase = None
+        job_log(session, job, f"Failed: {exc}")
         job.state = "failed"
         job.error_message = str(exc)
         job.finished_at = utcnow()

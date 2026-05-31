@@ -44,15 +44,19 @@ def _item(session, **kw):
     return item
 
 
-def _make_io(smaller=True, fail=False):
+def _make_io(smaller=True, fail=False, fail_download=False):
     calls = {"download": [], "upload": [], "removed": []}
 
-    def download(host, port, user, pw, remote, local):
+    def download(host, port, user, pw, remote, local, progress_cb=None):
         calls["download"].append((remote, local))
-        return {"success": True}
+        if progress_cb:
+            progress_cb(100)
+        return {"success": True} if not fail_download else {"success": False, "message": "dl boom"}
 
-    def upload(host, port, user, pw, local, remote):
+    def upload(host, port, user, pw, local, remote, progress_cb=None):
         calls["upload"].append((local, remote))
+        if progress_cb:
+            progress_cb(100)
         return {"success": True}
 
     def convert(tmp, out_name, preset, progress_cb=None, cancel_event=None):
@@ -165,3 +169,44 @@ def test_process_queue_drains(session, monkeypatch):
                               download=download, upload=upload, convert=convert)
     assert processed == 3
     assert session.query(Job).filter_by(state="done").count() == 3
+
+
+def test_worker_sets_and_clears_phase(session, monkeypatch):
+    monkeypatch.setattr(os.path, "getsize", lambda p: 1000 if "tmp" in p else 400)
+    monkeypatch.setattr(os.path, "exists", lambda p: True)
+    monkeypatch.setattr(os, "remove", lambda p: None)
+    monkeypatch.setattr(os, "makedirs", lambda *a, **k: None)
+
+    item = _item(session)
+    job = Job(media_item_id=item.id, state="queued")
+    session.add(job)
+    session.commit()
+
+    calls, download, upload, convert = _make_io(smaller=True)
+    process_one_job(session, job, {"sonarr": FakeClient()},
+                    download=download, upload=upload, convert=convert)
+
+    assert job.state == "done"
+    assert job.phase is None  # cleared on terminal state
+    assert job.log and "Downloading" in job.log
+    assert "Transcoding" in job.log and "Uploading" in job.log
+
+
+def test_worker_download_failure_marks_failed(session, monkeypatch):
+    monkeypatch.setattr(os.path, "getsize", lambda p: 1000)
+    monkeypatch.setattr(os.path, "exists", lambda p: True)
+    monkeypatch.setattr(os, "remove", lambda p: None)
+    monkeypatch.setattr(os, "makedirs", lambda *a, **k: None)
+
+    item = _item(session)
+    job = Job(media_item_id=item.id, state="queued")
+    session.add(job)
+    session.commit()
+
+    calls, download, upload, convert = _make_io(smaller=True, fail_download=True)
+    process_one_job(session, job, {"sonarr": FakeClient()},
+                    download=download, upload=upload, convert=convert)
+
+    assert job.state == "failed"
+    assert job.phase is None
+    assert len(calls["upload"]) == 0

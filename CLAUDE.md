@@ -38,7 +38,7 @@ python -m transcoder.api        # FastAPI + uvicorn on API_HOST:API_PORT (defaul
 ```
 Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
 `POST /api/scan`, `GET /api/scan/status`, `POST /api/enqueue`, `GET /api/jobs`,
-`POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`,
+`POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`, `GET /api/jobs/{id}/logs`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE), `GET /api/logs`,
 `POST /api/library/{id}/enqueue`. A continuous background worker drains the job
 queue automatically while the server runs.

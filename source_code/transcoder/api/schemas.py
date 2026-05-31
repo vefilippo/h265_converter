@@ -48,6 +48,7 @@ class JobOut(BaseModel):
     output_filename: str | None = None
     error_message: str | None = None
     title: str | None = None
+    phase: str | None = None
     created_at: dt.datetime | None = None
     started_at: dt.datetime | None = None
     finished_at: dt.datetime | None = None
@@ -58,6 +59,10 @@ class JobOut(BaseModel):
 class JobPage(BaseModel):
     total: int
     items: list[JobOut]
+
+
+class JobLogOut(BaseModel):
+    log: str
 
 
 class EnqueueIn(BaseModel):

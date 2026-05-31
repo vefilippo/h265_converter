@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { Exclusion, JobPage, LibraryPage, LogPage, ScanStatus, Status } from "../api/types";
+import type { Exclusion, JobLog, JobPage, LibraryPage, LogPage, ScanStatus, Status } from "../api/types";
 
 export const useStatus = () =>
   useQuery({ queryKey: ["status"], queryFn: () => api.get<Status>("/api/status"), refetchInterval: 5000 });
@@ -30,6 +30,13 @@ export const useJobs = (state?: string) =>
     queryKey: ["jobs", state],
     queryFn: () => api.get<JobPage>(`/api/jobs${state ? `?state_filter=${state}` : ""}`),
     refetchInterval: 5000,
+  });
+
+export const useJobLogs = (id: number, live: boolean) =>
+  useQuery({
+    queryKey: ["jobLogs", id],
+    queryFn: () => api.get<JobLog>(`/api/jobs/${id}/logs`),
+    refetchInterval: live ? 2000 : false,
   });
 
 export const useExclusions = () =>

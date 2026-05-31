@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Badge, jobStateVariant } from "../components/ui/badge";
+import { Badge, jobStateVariant, jobStateLabel } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
@@ -139,8 +139,8 @@ export default function Dashboard() {
                 <span className="text-fg font-medium truncate mr-4">
                   {currentJob.title ?? `Job #${currentJob.id}`}
                 </span>
-                <Badge variant={jobStateVariant(currentJob.state)}>
-                  {currentJob.state}
+                <Badge variant={jobStateVariant(currentJob.phase && currentJob.state === "running" ? currentJob.phase : currentJob.state)}>
+                  {jobStateLabel(currentJob)}
                 </Badge>
               </div>
               <div className="flex items-center gap-3">

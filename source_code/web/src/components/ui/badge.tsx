@@ -13,6 +13,9 @@ export const badgeVariants = cva(
         failed: "bg-state-failed/15 text-state-failed",
         skipped: "bg-state-skipped/15 text-state-skipped",
         cancelled: "bg-state-cancelled/20 text-muted",
+        downloading: "bg-cyan-500/15 text-cyan-400",
+        transcoding: "bg-amber-500/15 text-amber-400",
+        uploading: "bg-teal-500/15 text-teal-400",
         neutral: "bg-surface text-muted",
         accent: "bg-accent/15 text-accent",
       },
@@ -44,8 +47,18 @@ export function jobStateVariant(state: string): BadgeVariant {
     case "skipped_larger":
     case "skipped": return "skipped";
     case "cancelled": return "cancelled";
+    case "downloading": return "downloading";
+    case "transcoding": return "transcoding";
+    case "uploading": return "uploading";
     default: return "neutral";
   }
+}
+
+export function jobStateLabel(job: { state: string; phase: string | null }): string {
+  if (job.state === "running" && job.phase) {
+    return job.phase.charAt(0).toUpperCase() + job.phase.slice(1);
+  }
+  return job.state;
 }
 
 export function eligibilityVariant(e: string): BadgeVariant {

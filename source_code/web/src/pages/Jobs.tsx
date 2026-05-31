@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useActions, useJobs } from "../hooks/queries";
+import { useActions, useJobs, useJobLogs } from "../hooks/queries";
 import type { Job } from "../api/types";
-import { Badge, jobStateVariant } from "../components/ui/badge";
+import { Badge, jobStateVariant, jobStateLabel } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
 import { Progress } from "../components/ui/progress";
@@ -38,6 +38,8 @@ function jobWhen(job: Job): string {
 }
 
 function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
+  const live = job.state === "running";
+  const { data: logs } = useJobLogs(job.id, live);
   return (
     <Dialog open onClose={onClose} title={job.title ?? `Job #${job.id}`}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -78,6 +80,12 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
           </>
         )}
       </dl>
+      <div className="mt-4">
+        <div className="text-muted text-sm mb-1">Logs</div>
+        <pre className="bg-surface rounded-md p-3 text-xs font-mono max-h-64 overflow-auto whitespace-pre-wrap">
+          {logs?.log ? logs.log : "No logs yet"}
+        </pre>
+      </div>
     </Dialog>
   );
 }
@@ -150,7 +158,9 @@ export default function Jobs() {
                   <TD className="font-mono text-muted">{job.id}</TD>
                   <TD>{job.title ?? "—"}</TD>
                   <TD>
-                    <Badge variant={jobStateVariant(job.state)}>{job.state}</Badge>
+                    <Badge variant={jobStateVariant(job.phase && job.state === "running" ? job.phase : job.state)}>
+                      {jobStateLabel(job)}
+                    </Badge>
                   </TD>
                   <TD>
                     {job.state === "running" ? (
@@ -161,7 +171,7 @@ export default function Jobs() {
                         </span>
                       </div>
                     ) : (
-                      <Badge variant={jobStateVariant(job.state)}>{job.state}</Badge>
+                      <Badge variant={jobStateVariant(job.state)}>{jobStateLabel(job)}</Badge>
                     )}
                   </TD>
                   <TD className="font-mono">

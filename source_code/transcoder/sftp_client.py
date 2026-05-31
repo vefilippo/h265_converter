@@ -7,7 +7,7 @@ from pathlib import PureWindowsPath
 log = logging.getLogger("transcoder")
 
 def upload_file_via_sftp(host, port, username, password,
-                         local_path, remote_path) -> dict:
+                         local_path, remote_path, progress_cb=None) -> dict:
                              
     p = PureWindowsPath(remote_path)
     remote_path = f"./{p.as_posix()}"
@@ -21,6 +21,8 @@ def upload_file_via_sftp(host, port, username, password,
         def progress_callback(transferred, total):
             progress_bar.n = transferred
             progress_bar.refresh()
+            if progress_cb is not None and total:
+                progress_cb(int(transferred / total * 100))
 
         transport = paramiko.Transport((host, port))
         transport.connect(username=username, password=password)
@@ -39,7 +41,7 @@ def upload_file_via_sftp(host, port, username, password,
 
 
 def download_file_via_sftp(host, port, username, password,
-                           remote_path, local_path) -> dict:
+                           remote_path, local_path, progress_cb=None) -> dict:
                                
     p = PureWindowsPath(remote_path)
     remote_path = f"./{p.as_posix()}"
@@ -57,6 +59,8 @@ def download_file_via_sftp(host, port, username, password,
         def progress_callback(transferred, total):
             progress_bar.n = transferred
             progress_bar.refresh()
+            if progress_cb is not None and total:
+                progress_cb(int(transferred / total * 100))
 
         sftp.get(remote_path, local_path, callback=progress_callback)
 
