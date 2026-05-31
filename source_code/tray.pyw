@@ -176,14 +176,33 @@ def _notify(title: str, msg: str) -> None:
 
 # ── menu actions ──────────────────────────────────────────────────────────────
 
+def _find_server_pid() -> int | None:
+    """Return the PID of whatever process is listening on port 8765, or None."""
+    try:
+        out = subprocess.check_output(
+            ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL
+        )
+        for line in out.splitlines():
+            if ":8765 " in line and "LISTENING" in line:
+                return int(line.split()[-1])
+    except Exception:
+        pass
+    return None
+
+
 def _open_ui(_icon, _item) -> None:
     webbrowser.open(BASE_URL)
 
 
 def _start_server(_icon, _item) -> None:
     global _server_proc
+    # Don't start a second instance if anything is already serving.
+    if _is_up():
+        log.info("Start clicked but server already up")
+        return
     if _server_proc and _server_proc.poll() is None:
         return
+    log.info("Starting server via %s", _VENV_PY)
     _server_proc = subprocess.Popen(
         [str(_VENV_PY), "-m", "transcoder.api"],
         cwd=str(SOURCE_CODE_DIR),
@@ -192,9 +211,20 @@ def _start_server(_icon, _item) -> None:
 
 def _stop_server(_icon, _item) -> None:
     global _server_proc
+    # Terminate process we own.
     if _server_proc and _server_proc.poll() is None:
+        log.info("Terminating owned server process")
         _server_proc.terminate()
     _server_proc = None
+    # Also kill any externally-started process on the port.
+    pid = _find_server_pid()
+    if pid:
+        log.info("Killing external server PID %s", pid)
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                           check=True, capture_output=True)
+        except Exception as exc:
+            log.warning("taskkill failed: %s", exc)
 
 
 def _exit(icon, item) -> None:
