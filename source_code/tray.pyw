@@ -203,9 +203,12 @@ def _start_server(_icon, _item) -> None:
     if _server_proc and _server_proc.poll() is None:
         return
     log.info("Starting server via %s", _VENV_PY)
+    server_log = open(SOURCE_CODE_DIR / "log" / "server_start.log", "w")
     _server_proc = subprocess.Popen(
         [str(_VENV_PY), "-m", "transcoder.api"],
         cwd=str(SOURCE_CODE_DIR),
+        stdout=server_log,
+        stderr=server_log,
     )
 
 
@@ -230,6 +233,8 @@ def _stop_server(_icon, _item) -> None:
 def _exit(icon, item) -> None:
     _stop_server(icon, item)
     icon.stop()
+    import os
+    os._exit(0)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
