@@ -25,5 +25,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8765 "') do (
 )
 
 echo [uninstall] Done. The service has been stopped and removed.
-echo             Run scripts\run.bat to start manually, or scripts\install-service.bat to re-register.
+echo             Run scripts\tray.bat to start normally ^(tray + server^).
+echo             Run scripts\run.bat for headless ^(server only, no tray^).
+echo             Run scripts\install-service.bat to re-register the logon task.
 endlocal
