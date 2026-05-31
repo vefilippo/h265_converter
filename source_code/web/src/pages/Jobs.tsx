@@ -41,7 +41,7 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   const live = job.state === "running";
   const { data: logs } = useJobLogs(job.id, live);
   return (
-    <Dialog open onClose={onClose} title={job.title ?? `Job #${job.id}`}>
+    <Dialog open onClose={onClose} title={jobTitle(job)}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted">Original Size</dt>
         <dd className="font-mono">{mb(job.original_size)}</dd>
