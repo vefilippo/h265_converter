@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Helper scripts (Windows):** `scripts/build.bat` (venv + deps + web build), `scripts/run.bat` (start the service), `scripts/clean.bat` (remove venv/node_modules/dist), `scripts/install-service.bat` (run at logon), `scripts/tray.bat` (system tray launcher). See `scripts/README.md`.
+**Helper scripts (Windows):** `scripts/build.bat` (venv + deps + web build), `scripts/run.bat` (start the service), `scripts/clean.bat` (remove venv/node_modules/dist), `scripts/install-service.bat` (run at logon), `scripts/uninstall-service.bat` (stop + remove scheduled task), `scripts/tray.bat` (system tray launcher). See `scripts/README.md`.
 
 **Setup:**
 ```bash

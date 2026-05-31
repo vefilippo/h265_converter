@@ -9,6 +9,7 @@ Windows helper scripts for the H.265 transcoder service. Run them from anywhere
 | `run.bat` | Start the service standalone (FastAPI + worker, serving the built UI). Needs `.env`. |
 | `clean.bat` | Remove `.venv`, `web/node_modules`, `web/dist` (asks for confirmation). Leaves `.env`/DB/source intact. |
 | `install-service.bat` | Register a scheduled task to start the service **hidden at logon** (via `run-hidden.vbs`). |
+| `uninstall-service.bat` | Stop and delete the `H265Transcoder` scheduled task, then kill any process still on port 8765. |
 | `run-hidden.vbs` | Helper that launches `run.bat` with no console window (used by the scheduled task). |
 | `tray.bat` | Start the system tray icon (no console). Green = server up, grey = down. Right-click: Open UI / Start / Stop / Exit. Sends Windows toast notifications on job completion. |
 
