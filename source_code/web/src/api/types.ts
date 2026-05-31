@@ -40,7 +40,8 @@ export interface Settings {
   sftp_username: string;
   sftp_password: string;
   handbrake_cli: string;
-  handbrake_preset: string;
+  handbrake_preset_1080: string;
+  handbrake_preset_4k: string;
   scheduler_next_run: string | null;
 }
 
@@ -56,7 +57,8 @@ export interface SettingsUpdate {
   sftp_username?: string;
   sftp_password?: string;
   handbrake_cli?: string;
-  handbrake_preset?: string;
+  handbrake_preset_1080?: string;
+  handbrake_preset_4k?: string;
   current_password?: string;
   new_password?: string;
 }

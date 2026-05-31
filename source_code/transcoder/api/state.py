@@ -10,10 +10,18 @@ from transcoder.worker_controller import WorkerController
 
 
 def build_clients() -> dict:
-    return {
-        "sonarr": SonarrClient(settings.SONARR_URL, settings.SONARR_API_KEY),
-        "radarr": RadarrClient(settings.RADARR_URL, settings.RADARR_API_KEY),
-    }
+    from transcoder.repo import get_effective
+    with SessionLocal() as db:
+        return {
+            "sonarr": SonarrClient(
+                get_effective(db, "sonarr_url", settings.SONARR_URL),
+                get_effective(db, "sonarr_api_key", settings.SONARR_API_KEY),
+            ),
+            "radarr": RadarrClient(
+                get_effective(db, "radarr_url", settings.RADARR_URL),
+                get_effective(db, "radarr_api_key", settings.RADARR_API_KEY),
+            ),
+        }
 
 
 def _now_iso() -> str:

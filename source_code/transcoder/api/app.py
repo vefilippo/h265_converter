@@ -50,7 +50,8 @@ def create_app(start_worker: bool = True) -> FastAPI:
                 "sftp_username": _cfg.SFTP_USERNAME,
                 "sftp_password": _cfg.SFTP_PASSWORD,
                 "handbrake_cli": _cfg.HANDBRAKE_CLI,
-                "handbrake_preset": _cfg.PRESET_1080,
+                "handbrake_preset_1080": _cfg.PRESET_1080,
+                "handbrake_preset_4k": _cfg.PRESET_4K,
             })
             if get_setting(_db, "app_password_hash") is None and _cfg.APP_PASSWORD:
                 _hash = _bcrypt.hashpw(_cfg.APP_PASSWORD.encode(), _bcrypt.gensalt()).decode()
@@ -61,8 +62,13 @@ def create_app(start_worker: bool = True) -> FastAPI:
 
         # Define the scheduled job (same logic as POST /run)
         async def _scheduled_run():
+            import asyncio
             from transcoder.api.routers.scan import _run_full
-            _run_full()
+            if not state.scan_status.try_start():
+                log.info("Scheduled run skipped: scan already running")
+                return
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _run_full)
 
         state.scheduler.set_job_fn(_scheduled_run)
         state.scheduler.start(_sched_cron, _sched_startup)

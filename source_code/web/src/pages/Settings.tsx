@@ -108,7 +108,8 @@ export default function Settings() {
   const [connError, setConnError] = useState<string | null>(null);
 
   const [hbCli, setHbCli] = useState('');
-  const [hbPreset, setHbPreset] = useState(PRESETS[0]);
+  const [hbPreset1080, setHbPreset1080] = useState(PRESETS[0]);
+  const [hbPreset4k, setHbPreset4k] = useState(PRESETS[1]);
   const [transSaved, setTransSaved] = useState(false);
   const [transError, setTransError] = useState<string | null>(null);
 
@@ -132,7 +133,8 @@ export default function Settings() {
     setSftpUser(data.sftp_username || REDACTED);
     setSftpPass(data.sftp_password || REDACTED);
     setHbCli(data.handbrake_cli);
-    setHbPreset(data.handbrake_preset || PRESETS[0]);
+    setHbPreset1080(data.handbrake_preset_1080 || PRESETS[0]);
+    setHbPreset4k(data.handbrake_preset_4k || PRESETS[1]);
     setSeeded(true);
   }
 
@@ -229,7 +231,7 @@ export default function Settings() {
       <Section
         title="Transcoding"
         onSave={() => save(
-          { handbrake_cli: hbCli, handbrake_preset: hbPreset },
+          { handbrake_cli: hbCli, handbrake_preset_1080: hbPreset1080, handbrake_preset_4k: hbPreset4k },
           setTransSaved, setTransError
         )}
         saving={mut.isPending} saved={transSaved} error={transError}
@@ -237,11 +239,11 @@ export default function Settings() {
         <Field label="HandBrake CLI path">
           <Input value={hbCli} onChange={setHbCli} placeholder="C:\...\HandBrakeCLI.exe" />
         </Field>
-        <Field label="Preset">
-          <select value={hbPreset} onChange={e => setHbPreset(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
+        <Field label="1080p preset">
+          <Input value={hbPreset1080} onChange={setHbPreset1080} placeholder="H.265 NVENC 1080p" />
+        </Field>
+        <Field label="4K preset">
+          <Input value={hbPreset4k} onChange={setHbPreset4k} placeholder="H.265 NVENC 2160p 4K" />
         </Field>
       </Section>
 

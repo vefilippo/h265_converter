@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from transcoder.api.auth import require_auth
-from transcoder.api.deps import get_db
+from transcoder.api.deps import get_session as get_db
 from transcoder.api import state
 from transcoder.api.schemas import SettingsOut, SettingsUpdate
 from transcoder.repo import get_setting, set_setting, get_effective
@@ -39,7 +39,8 @@ def get_settings(db: Session = Depends(get_db)):
         sftp_username=_mask(db, "sftp_username", cfg.SFTP_USERNAME),
         sftp_password=_mask(db, "sftp_password", cfg.SFTP_PASSWORD),
         handbrake_cli=get_effective(db, "handbrake_cli", cfg.HANDBRAKE_CLI),
-        handbrake_preset=get_effective(db, "handbrake_preset", cfg.HANDBRAKE_PRESET),
+        handbrake_preset_1080=get_effective(db, "handbrake_preset_1080", cfg.PRESET_1080),
+        handbrake_preset_4k=get_effective(db, "handbrake_preset_4k", cfg.PRESET_4K),
         scheduler_next_run=state.scheduler.next_run(),
     )
 
@@ -66,7 +67,8 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
 
     simple_fields = [
         "sonarr_url", "radarr_url", "sftp_host", "sftp_port",
-        "handbrake_cli", "handbrake_preset", "scheduler_run_at_startup",
+        "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
+        "scheduler_run_at_startup",
     ]
     for field in simple_fields:
         val = getattr(body, field, None)
