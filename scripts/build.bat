@@ -3,9 +3,14 @@ REM Build: create the Python venv, install backend deps, install + build the web
 setlocal
 cd /d "%~dp0..\source_code" || exit /b 1
 
-if not exist ".venv\Scripts\python.exe" (
+if not exist ".venv\pyvenv.cfg" (
   echo [build] Creating virtual environment...
-  python -m venv .venv || (echo [build] Failed to create venv & exit /b 1)
+  if exist ".venv" rmdir /s /q ".venv"
+  python -m venv --upgrade-deps .venv || (echo [build] Failed to create venv & exit /b 1)
+  if not exist ".venv\Scripts\pip.exe" (
+    echo [build] Bootstrapping pip...
+    ".venv\Scripts\python.exe" -m ensurepip --upgrade || (echo [build] Failed to bootstrap pip & exit /b 1)
+  )
 )
 
 echo [build] Installing Python dependencies...

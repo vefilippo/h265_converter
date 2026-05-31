@@ -3,6 +3,7 @@
 Run via scripts/tray.bat or:  .venv\Scripts\pythonw.exe tray.pyw
 Double-click the tray icon to open the web UI; right-click for the menu.
 """
+import http.cookiejar
 import json
 import logging
 import pathlib
@@ -30,6 +31,40 @@ if not _VENV_PY.exists():
 _server_proc: subprocess.Popen | None = None
 _poll_state: dict = {"prev_job_id": None, "prev_queue_len": None}
 
+# Cookie jar so the tray maintains an authenticated session across requests.
+_cookie_jar = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookie_jar))
+
+
+def _read_app_password() -> str:
+    env_file = SOURCE_CODE_DIR / ".env"
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("APP_PASSWORD="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return ""
+
+
+def _ensure_authed() -> None:
+    """POST /api/login if the session cookie is not yet established."""
+    password = _read_app_password()
+    if not password:
+        return
+    payload = json.dumps({"password": password}).encode()
+    req = urllib.request.Request(
+        f"{BASE_URL}/api/login",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        _opener.open(req, timeout=3)
+    except Exception:
+        pass
+
 log = logging.getLogger("tray")
 
 
@@ -47,7 +82,7 @@ def _make_icon(online: bool) -> Image.Image:
 
 def _is_up() -> bool:
     try:
-        urllib.request.urlopen(f"{BASE_URL}/api/health", timeout=2)
+        _opener.open(f"{BASE_URL}/api/health", timeout=2)
         return True
     except Exception:
         return False
@@ -55,7 +90,7 @@ def _is_up() -> bool:
 
 def _get_json(path: str):
     try:
-        with urllib.request.urlopen(f"{BASE_URL}{path}", timeout=3) as r:
+        with _opener.open(f"{BASE_URL}{path}", timeout=3) as r:
             return json.loads(r.read())
     except Exception:
         return None
@@ -64,17 +99,22 @@ def _get_json(path: str):
 # ── poll thread ───────────────────────────────────────────────────────────────
 
 def _poll(icon: pystray.Icon) -> None:
+    was_up = False
     while True:
         up = _is_up()
         icon.icon = _make_icon(up)
 
         if up:
+            if not was_up:
+                # Server just came online — authenticate so cookie is set.
+                _ensure_authed()
             _check_job_transitions(icon)
         else:
             # Reset state so we don't misfire on reconnect.
             _poll_state["prev_job_id"] = None
             _poll_state["prev_queue_len"] = None
 
+        was_up = up
         time.sleep(5)
 
 
