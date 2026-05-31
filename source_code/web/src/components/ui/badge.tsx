@@ -61,6 +61,15 @@ export function jobStateLabel(job: { state: string; phase: string | null }): str
   return job.state;
 }
 
+export function jobTitle(job: { title: string | null; season: number | null; episode: number | null }): string {
+  if (job.season != null && job.episode != null) {
+    const s = String(job.season).padStart(2, "0");
+    const e = String(job.episode).padStart(2, "0");
+    return `${job.title ?? "—"} — S${s}E${e}`;
+  }
+  return job.title ?? "—";
+}
+
 export function eligibilityVariant(e: string): BadgeVariant {
   switch (e) {
     case "needs_transcode": return "accent";

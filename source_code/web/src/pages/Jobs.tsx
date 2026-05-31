@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useActions, useJobs, useJobLogs } from "../hooks/queries";
 import type { Job } from "../api/types";
-import { Badge, jobStateVariant, jobStateLabel } from "../components/ui/badge";
+import { Badge, jobStateVariant, jobStateLabel, jobTitle } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
 import { Progress } from "../components/ui/progress";
@@ -41,7 +41,7 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   const live = job.state === "running";
   const { data: logs } = useJobLogs(job.id, live);
   return (
-    <Dialog open onClose={onClose} title={job.title ?? `Job #${job.id}`}>
+    <Dialog open onClose={onClose} title={jobTitle(job)}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted">Original Size</dt>
         <dd className="font-mono">{mb(job.original_size)}</dd>
@@ -156,7 +156,7 @@ export default function Jobs() {
                   onClick={() => setDetailJob(job)}
                 >
                   <TD className="font-mono text-muted">{job.id}</TD>
-                  <TD>{job.title ?? "—"}</TD>
+                  <TD>{jobTitle(job)}</TD>
                   <TD>
                     <Badge variant={jobStateVariant(job.phase && job.state === "running" ? job.phase : job.state)}>
                       {jobStateLabel(job)}

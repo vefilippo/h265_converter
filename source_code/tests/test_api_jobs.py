@@ -150,6 +150,28 @@ def test_jobs_list_includes_phase(api):
     assert body["items"][0]["phase"] == "transcoding"
 
 
+def test_job_includes_season_and_episode(api):
+    client, Session = api
+    _seed_item(Session, title="Breaking Bad", season=2, episode=9)
+    client.post("/api/enqueue", json={})
+    body = client.get("/api/jobs").json()
+    item = body["items"][0]
+    assert item["title"] == "Breaking Bad"
+    assert item["season"] == 2
+    assert item["episode"] == 9
+
+
+def test_movie_job_has_null_season_episode(api):
+    client, Session = api
+    _seed_item(Session, source="radarr", external_id="99", title="Inception",
+               season=None, episode=None)
+    client.post("/api/enqueue", json={})
+    body = client.get("/api/jobs").json()
+    item = body["items"][0]
+    assert item["season"] is None
+    assert item["episode"] is None
+
+
 def test_job_logs_endpoint_returns_log(api):
     client, Session = api
     iid = _seed_item(Session)

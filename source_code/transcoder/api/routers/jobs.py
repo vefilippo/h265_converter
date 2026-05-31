@@ -14,7 +14,10 @@ _RETRYABLE = {"failed", "skipped_larger", "cancelled"}
 
 def _to_out(job: Job) -> JobOut:
     out = JobOut.model_validate(job)
-    out.title = job.media_item.title if job.media_item else None
+    if job.media_item:
+        out.title = job.media_item.title
+        out.season = job.media_item.season
+        out.episode = job.media_item.episode
     return out
 
 

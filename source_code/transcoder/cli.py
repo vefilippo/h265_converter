@@ -37,7 +37,7 @@ def _discover(session, clients, app, scope, show, movie):
 
 
 def main() -> None:
-    init_logging()
+    init_logging("cli")
     init_db()
     args = build_parser().parse_args()
 

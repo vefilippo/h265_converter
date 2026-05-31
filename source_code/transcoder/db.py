@@ -56,3 +56,10 @@ def ensure_job_columns(engine=None):
                 conn.execute(text(
                     "UPDATE job SET log = log_excerpt "
                     "WHERE log IS NULL AND log_excerpt IS NOT NULL"))
+
+
+def backup_db(db_path=None) -> None:
+    import pathlib, shutil
+    p = pathlib.Path(db_path) if db_path is not None else pathlib.Path("transcoder.db")
+    if p.exists():
+        shutil.copy2(p, p.with_suffix(".db.bak"))

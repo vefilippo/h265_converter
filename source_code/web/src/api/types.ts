@@ -10,7 +10,9 @@ export interface Job {
   id: number; media_item_id: number; state: string; progress: number;
   preset: string | null; original_size: number | null; output_size: number | null;
   reduction_pct: number | null; output_filename: string | null;
-  error_message: string | null; title: string | null; phase: string | null;
+  error_message: string | null; title: string | null;
+  season: number | null; episode: number | null;
+  phase: string | null;
   created_at: string | null; started_at: string | null; finished_at: string | null;
 }
 export interface JobPage { total: number; items: Job[]; }
