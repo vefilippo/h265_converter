@@ -48,15 +48,25 @@ function Field({ htmlFor, label, children }: {
   );
 }
 
-/** Password input with accessible show/hide toggle */
+/** Password input with accessible show/hide toggle.
+ *  When value is the REDACTED sentinel the input shows empty with a
+ *  placeholder so the user knows a value is saved without seeing bullets. */
 function MaskedInput({ id, fieldLabel, value, onChange }: {
   id: string; fieldLabel: string; value: string; onChange: (v: string) => void;
 }) {
   const [show, setShow] = useState(false);
+  const isRedacted = value === REDACTED;
+
   return (
     <div className="flex gap-2">
-      <Input id={id} type={show ? 'text' : 'password'} value={value}
-        onChange={e => onChange(e.target.value)} className="w-full" />
+      <Input
+        id={id}
+        type={show ? 'text' : 'password'}
+        value={isRedacted ? '' : value}
+        placeholder={isRedacted ? 'saved — type to change' : undefined}
+        onChange={e => onChange(e.target.value)}
+        className="w-full"
+      />
       <Button type="button" variant="outline" size="sm"
         onClick={() => setShow(s => !s)}
         aria-pressed={show}
