@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Helper scripts (Windows):** `scripts/build.bat` (venv + deps + web build), `scripts/run.bat` (start the service), `scripts/clean.bat` (remove venv/node_modules/dist), `scripts/install-service.bat` (run at logon). See `scripts/README.md`.
+**Helper scripts (Windows):** `scripts/build.bat` (venv + deps + web build), `scripts/run.bat` (start the service), `scripts/clean.bat` (remove venv/node_modules/dist), `scripts/install-service.bat` (run at logon), `scripts/tray.bat` (system tray launcher). See `scripts/README.md`.
 
 **Setup:**
 ```bash
@@ -67,7 +67,7 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 **Key modules (`source_code/transcoder/`):**
 - `cli.py` — thin entry point; `build_parser()` + `main()` dispatch the `scan`/`run`/`queue` commands
 - `config.py` — pydantic-settings loaded from `.env` (gitignored; see `.env.example`)
-- `db.py` — SQLAlchemy engine/session/`Base`/`init_db`
+- `db.py` — SQLAlchemy engine/session/`Base`/`init_db`/`backup_db` (copies `transcoder.db` → `.db.bak` before migrations)
 - `models.py` — ORM models: `MediaItem`, `Job`, `Exclusion`, `Setting` + exclusion-key helpers
 - `repo.py` — shared data-access helpers (upsert, settings, exclusions); callers own commits
 - `migrate.py` — one-time import of legacy CSV/timestamp state into the DB
@@ -81,7 +81,8 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
 - `sftp_client.py` — upload/download via Paramiko with tqdm progress bars
 - `history.py` — `_parse_iso_z()` ISO-8601 parsing (used by discovery for the watermark)
-- `logging_setup.py` — real leveled logging to console + `source_code/log/`
+- `logging_setup.py` — leveled logging to console + rotating file (`log/api.log` for the server, `log/cli.log` for the CLI; 5 MB / 3 backups)
+- `tray.pyw` — Windows system tray launcher (pystray + Pillow): green/grey health icon, start/stop/open-UI menu, toast notifications on job done/failed/queue-clear (winotify); run via `scripts/tray.bat`
 
 **State** lives in a SQLite database (`source_code/transcoder.db`): `media_item`, `job`,
 `exclusion`, `setting` tables. Legacy `excluded_*.csv` / `last_history_timestamp.txt` are
