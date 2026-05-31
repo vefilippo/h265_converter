@@ -14,10 +14,22 @@ import time
 import urllib.request
 import webbrowser
 
+_LOG_FILE = pathlib.Path(__file__).parent / "log" / "tray.log"
+_LOG_FILE.parent.mkdir(exist_ok=True)
+logging.basicConfig(
+    filename=str(_LOG_FILE),
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("tray")
+log.info("tray.pyw starting")
+
 try:
     import pystray
     from PIL import Image, ImageDraw
+    log.info("pystray + PIL imported OK")
 except ImportError as exc:
+    log.exception("Missing dependency: %s", exc)
     import tkinter.messagebox as _mb
     _mb.showerror("Missing dependency", str(exc))
     sys.exit(1)
@@ -64,9 +76,6 @@ def _ensure_authed() -> None:
         _opener.open(req, timeout=3)
     except Exception:
         pass
-
-log = logging.getLogger("tray")
-
 
 # ── icon helpers ──────────────────────────────────────────────────────────────
 
@@ -213,4 +222,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        log.exception("tray crashed")
+        raise
