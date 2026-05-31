@@ -253,6 +253,7 @@ def main() -> None:
         ),
     )
     threading.Thread(target=_poll, args=(icon,), daemon=True).start()
+    _start_server(None, None)
     icon.run()
 
 
