@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useActions, useJobs, useJobLogs } from "../hooks/queries";
 import type { Job } from "../api/types";
-import { Badge, jobStateVariant, jobStateLabel } from "../components/ui/badge";
+import { Badge, jobStateVariant, jobStateLabel, jobTitle } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
 import { Progress } from "../components/ui/progress";
@@ -156,7 +156,7 @@ export default function Jobs() {
                   onClick={() => setDetailJob(job)}
                 >
                   <TD className="font-mono text-muted">{job.id}</TD>
-                  <TD>{job.title ?? "—"}</TD>
+                  <TD>{jobTitle(job)}</TD>
                   <TD>
                     <Badge variant={jobStateVariant(job.phase && job.state === "running" ? job.phase : job.state)}>
                       {jobStateLabel(job)}

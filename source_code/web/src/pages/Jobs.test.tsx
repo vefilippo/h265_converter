@@ -9,37 +9,18 @@ afterEach(() => vi.restoreAllMocks());
 
 const ITEMS = [
   {
-    id: 1,
-    media_item_id: 1,
-    state: "running",
-    phase: "transcoding",
-    progress: 42,
-    preset: null,
-    original_size: null,
-    output_size: null,
-    reduction_pct: null,
-    output_filename: null,
-    error_message: null,
-    title: "Show A",
-    created_at: "2026-05-30T09:00:00",
-    started_at: null,
-    finished_at: null,
+    id: 1, media_item_id: 1, state: "running", phase: "transcoding", progress: 42,
+    preset: null, original_size: null, output_size: null, reduction_pct: null,
+    output_filename: null, error_message: null, title: "Show A",
+    season: 1, episode: 5,
+    created_at: "2026-05-30T09:00:00", started_at: null, finished_at: null,
   },
   {
-    id: 2,
-    media_item_id: 2,
-    state: "failed",
-    phase: null,
-    progress: 0,
-    preset: "H.265 NVENC 1080p",
-    original_size: 1000000,
-    output_size: null,
-    reduction_pct: null,
-    output_filename: null,
-    error_message: "boom",
-    title: "Movie X",
-    created_at: "2026-05-30T08:00:00",
-    started_at: "2026-05-30T08:01:00",
+    id: 2, media_item_id: 2, state: "failed", phase: null, progress: 0,
+    preset: "H.265 NVENC 1080p", original_size: 1000000, output_size: null,
+    reduction_pct: null, output_filename: null, error_message: "boom",
+    title: "Movie X", season: null, episode: null,
+    created_at: "2026-05-30T08:00:00", started_at: "2026-05-30T08:01:00",
     finished_at: "2026-05-30T10:30:00",
   },
 ];
@@ -93,6 +74,22 @@ test("renders both job titles", async () => {
 
   expect(await screen.findByText(/Show A/)).toBeInTheDocument();
   expect(await screen.findByText(/Movie X/)).toBeInTheDocument();
+});
+
+test("TV show job renders S01E05 label", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+  expect(await screen.findByText(/Show A — S01E05/)).toBeInTheDocument();
+});
+
+test("movie job renders plain title without episode", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+  await screen.findByText(/Movie X/);
+  const rows = screen.getAllByRole("row");
+  const movieRow = rows.find((r) => r.textContent?.includes("Movie X"));
+  expect(movieRow).toBeDefined();
+  expect(within(movieRow!).queryByText(/S\d\dE\d\d/)).not.toBeInTheDocument();
 });
 
 test("shows the job timestamp in the When column", async () => {
