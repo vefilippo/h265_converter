@@ -19,7 +19,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [uninstall] Killing any remaining python processes on port 8765...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8765 "') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8765 " ^| findstr "LISTENING"') do (
     echo [uninstall]   Killing PID %%a
     taskkill /PID %%a /F 2>nul
 )

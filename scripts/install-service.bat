@@ -6,6 +6,12 @@ set TASK=H265Transcoder
 set PYTHONW=%~dp0..\source_code\.venv\Scripts\pythonw.exe
 set TRAY=%~dp0..\source_code\tray.pyw
 
+if not exist "%PYTHONW%" (
+  echo [service] ERROR: venv not found at %PYTHONW%
+  echo [service] Run scripts\build.bat first.
+  endlocal & exit /b 1
+)
+
 echo [service] Registering scheduled task "%TASK%" to start at logon...
 schtasks /create /tn "%TASK%" /tr "\"%PYTHONW%\" \"%TRAY%\"" /sc onlogon /rl highest /f
 if errorlevel 1 (
