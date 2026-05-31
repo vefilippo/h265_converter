@@ -99,14 +99,18 @@ function SubCard({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-/** Test-connection button with inline status */
-function TestButton({ service }: { service: 'sonarr' | 'radarr' | 'sftp' }) {
+/** Test-connection button with inline status.
+ *  Passes current form values so the test reflects what you see, not what's saved. */
+function TestButton({ service, params }: {
+  service: 'sonarr' | 'radarr' | 'sftp';
+  params: Record<string, string>;
+}) {
   const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
 
   async function test() {
     setStatus('testing');
     try {
-      const result = await api.post<{ ok: boolean }>(`/api/settings/test/${service}`);
+      const result = await api.post<{ ok: boolean }>(`/api/settings/test/${service}`, params);
       setStatus(result.ok ? 'ok' : 'fail');
     } catch {
       setStatus('fail');
@@ -344,7 +348,7 @@ export default function Settings() {
                   <MaskedInput id="sonarr-key" fieldLabel="Sonarr API key"
                     value={sonarrKey} onChange={v => { setSonarrKey(v); setConnDirty(true); }} />
                 </LabeledField>
-                <TestButton service="sonarr" />
+                <TestButton service="sonarr" params={{ url: sonarrUrl, api_key: sonarrKey }} />
               </SubCard>
 
               <SubCard title="Radarr">
@@ -356,7 +360,7 @@ export default function Settings() {
                   <MaskedInput id="radarr-key" fieldLabel="Radarr API key"
                     value={radarrKey} onChange={v => { setRadarrKey(v); setConnDirty(true); }} />
                 </LabeledField>
-                <TestButton service="radarr" />
+                <TestButton service="radarr" params={{ url: radarrUrl, api_key: radarrKey }} />
               </SubCard>
             </div>
 
@@ -384,7 +388,7 @@ export default function Settings() {
                     value={sftpPass} onChange={v => { setSftpPass(v); setConnDirty(true); }} />
                 </LabeledField>
               </div>
-              <TestButton service="sftp" />
+              <TestButton service="sftp" params={{ host: sftpHost, port: sftpPort, username: sftpUser, password: sftpPass }} />
             </SubCard>
 
             <div className="flex items-center gap-3 border-t border-border pt-4">

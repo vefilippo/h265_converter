@@ -1,5 +1,6 @@
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from transcoder.api.auth import require_auth
@@ -102,20 +103,37 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     return {"updated": updated}
 
 
+class TestBody(BaseModel):
+    url: str | None = None
+    api_key: str | None = None
+    host: str | None = None
+    port: str | None = None
+    username: str | None = None
+    password: str | None = None
+
+
 @router.post("/test/{service}", dependencies=[Depends(require_auth)])
-def test_connection(service: str, db: Session = Depends(get_db)):
+def test_connection(service: str, body: TestBody, db: Session = Depends(get_db)):
+    """Test a connection using form values; falls back to DB for unchanged fields."""
     cfg = _cfg.settings
     if service not in ("sonarr", "radarr", "sftp"):
         raise HTTPException(status_code=400, detail="Unknown service")
+
+    def _use(form_val: str | None, db_key: str, env_fallback: str) -> str:
+        """Use the form value if it was actually changed, otherwise use DB/env."""
+        if form_val and form_val != _REDACTED:
+            return form_val
+        return get_effective(db, db_key, env_fallback)
+
     try:
         if service in ("sonarr", "radarr"):
             import requests as _req
             if service == "sonarr":
-                url = get_effective(db, "sonarr_url", cfg.SONARR_URL)
-                key = get_effective(db, "sonarr_api_key", cfg.SONARR_API_KEY)
+                url = _use(body.url, "sonarr_url", cfg.SONARR_URL)
+                key = _use(body.api_key, "sonarr_api_key", cfg.SONARR_API_KEY)
             else:
-                url = get_effective(db, "radarr_url", cfg.RADARR_URL)
-                key = get_effective(db, "radarr_api_key", cfg.RADARR_API_KEY)
+                url = _use(body.url, "radarr_url", cfg.RADARR_URL)
+                key = _use(body.api_key, "radarr_api_key", cfg.RADARR_API_KEY)
             r = _req.get(
                 f"{url.rstrip('/')}/api/v3/system/status",
                 headers={"X-Api-Key": key},
@@ -124,10 +142,10 @@ def test_connection(service: str, db: Session = Depends(get_db)):
             return {"ok": r.ok, "code": r.status_code}
         else:  # sftp
             import paramiko
-            host = get_effective(db, "sftp_host", cfg.SFTP_HOST)
-            port = int(get_effective(db, "sftp_port", str(cfg.SFTP_PORT)))
-            username = get_effective(db, "sftp_username", cfg.SFTP_USERNAME)
-            password = get_effective(db, "sftp_password", cfg.SFTP_PASSWORD)
+            host = _use(body.host, "sftp_host", cfg.SFTP_HOST)
+            port = int(_use(body.port, "sftp_port", str(cfg.SFTP_PORT)))
+            username = _use(body.username, "sftp_username", cfg.SFTP_USERNAME)
+            password = _use(body.password, "sftp_password", cfg.SFTP_PASSWORD)
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(host, port=port, username=username, password=password, timeout=5)
