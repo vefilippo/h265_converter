@@ -1,101 +1,148 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import cronstrue from 'cronstrue';
-import { getSettings, updateSettings } from '../api/client';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Spinner } from '../components/ui/spinner';
+import { api, getSettings, updateSettings } from '../api/client';
 import type { SettingsUpdate } from '../api/types';
 
 const REDACTED = '••••••••';
-const PRESETS = ['H.265 NVENC 1080p', 'H.265 NVENC 2160p 4K'];
 
-function Section({ title, children, onSave, saving, saved, error }: {
-  title: string;
-  children: React.ReactNode;
-  onSave: () => void;
-  saving: boolean;
-  saved: boolean;
-  error: string | null;
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function cronDesc(expr: string): string {
+  try { return cronstrue.toString(expr); }
+  catch { return ''; }
+}
+
+function cronValid(expr: string): boolean {
+  try { cronstrue.toString(expr); return true; }
+  catch { return false; }
+}
+
+// ── primitive components ──────────────────────────────────────────────────────
+
+/** Label above input, compact — used inside SubCards */
+function LabeledField({ htmlFor, label, children }: {
+  htmlFor: string; label: string; children: React.ReactNode;
 }) {
   return (
-    <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
-      <div className="space-y-4">{children}</div>
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          onClick={onSave}
-          disabled={saving}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
-        {error && <span className="text-sm text-red-600">{error}</span>}
-      </div>
+    <div className="space-y-1">
+      <label htmlFor={htmlFor} className="block text-xs font-medium text-muted">{label}</label>
+      {children}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** 3-col grid label / input — used in Scheduler and Security */
+function Field({ htmlFor, label, children }: {
+  htmlFor: string; label: string; children: React.ReactNode;
+}) {
   return (
     <div className="grid grid-cols-3 items-start gap-4">
-      <label className="pt-2 text-sm font-medium text-gray-700">{label}</label>
+      <label htmlFor={htmlFor} className="pt-2 text-sm font-medium text-muted">{label}</label>
       <div className="col-span-2">{children}</div>
     </div>
   );
 }
 
-function Input({ value, onChange, type = 'text', placeholder }: {
-  value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
-  );
-}
-
-function MaskedInput({ value, onChange, placeholder }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+/** Password input with accessible show/hide toggle */
+function MaskedInput({ id, fieldLabel, value, onChange }: {
+  id: string; fieldLabel: string; value: string; onChange: (v: string) => void;
 }) {
   const [show, setShow] = useState(false);
   return (
     <div className="flex gap-2">
-      <input
-        type={show ? 'text' : 'password'}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <button
-        type="button"
+      <Input id={id} type={show ? 'text' : 'password'} value={value}
+        onChange={e => onChange(e.target.value)} className="w-full" />
+      <Button type="button" variant="outline" size="sm"
         onClick={() => setShow(s => !s)}
-        className="shrink-0 rounded border border-gray-300 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50"
-      >
+        aria-pressed={show}
+        aria-label={show ? `Hide ${fieldLabel}` : `Show ${fieldLabel}`}>
         {show ? 'Hide' : 'Show'}
-      </button>
+      </Button>
     </div>
   );
 }
 
-function cronDescription(expr: string): string {
-  try { return cronstrue.toString(expr); }
-  catch { return 'Invalid cron expression'; }
+/** Persistent live-region feedback (always in DOM so AT picks up updates) */
+function StatusMessage({ saving, saved, error }: {
+  saving: boolean; saved: boolean; error: string | null;
+}) {
+  return (
+    <div role="status" aria-live="polite" aria-atomic="true" className="min-h-[1.25rem] text-sm">
+      {saved && !saving && <span className="text-accent">Saved</span>}
+      {error && !saving && <span role="alert" className="text-state-failed">{error}</span>}
+    </div>
+  );
 }
+
+/** Dark sub-card for service groups inside Connections */
+function SubCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-border bg-elevated p-4">
+      <h3 className="mb-3 text-sm font-semibold text-fg">{title}</h3>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Test-connection button with inline status */
+function TestButton({ service }: { service: 'sonarr' | 'radarr' | 'sftp' }) {
+  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+
+  async function test() {
+    setStatus('testing');
+    try {
+      const result = await api.post<{ ok: boolean }>(`/api/settings/test/${service}`);
+      setStatus(result.ok ? 'ok' : 'fail');
+    } catch {
+      setStatus('fail');
+    }
+    setTimeout(() => setStatus('idle'), 5000);
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <Button type="button" variant="outline" size="sm"
+        onClick={test} disabled={status === 'testing'} aria-busy={status === 'testing'}>
+        {status === 'testing' ? 'Testing…' : 'Test connection'}
+      </Button>
+      {status === 'ok' && (
+        <span role="status" className="text-xs text-accent">Connected ✓</span>
+      )}
+      {status === 'fail' && (
+        <span role="alert" className="text-xs text-state-failed">Connection failed</span>
+      )}
+    </div>
+  );
+}
+
+/** Unsaved-changes amber dot */
+function DirtyDot() {
+  return (
+    <span className="ml-2 inline-block h-2 w-2 rounded-full bg-amber-400"
+      aria-label="Unsaved changes" title="Unsaved changes" />
+  );
+}
+
+// ── main component ────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
 
+  // Scheduler
   const [cron, setCron] = useState('');
   const [schedEnabled, setSchedEnabled] = useState(false);
   const [runAtStartup, setRunAtStartup] = useState(false);
   const [schedSaved, setSchedSaved] = useState(false);
   const [schedError, setSchedError] = useState<string | null>(null);
+  const [schedDirty, setSchedDirty] = useState(false);
 
+  // Connections
   const [sonarrUrl, setSonarrUrl] = useState('');
   const [sonarrKey, setSonarrKey] = useState(REDACTED);
   const [radarrUrl, setRadarrUrl] = useState('');
@@ -106,21 +153,26 @@ export default function Settings() {
   const [sftpPass, setSftpPass] = useState(REDACTED);
   const [connSaved, setConnSaved] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
+  const [connDirty, setConnDirty] = useState(false);
 
+  // Encoder
   const [hbCli, setHbCli] = useState('');
-  const [hbPreset1080, setHbPreset1080] = useState(PRESETS[0]);
-  const [hbPreset4k, setHbPreset4k] = useState(PRESETS[1]);
+  const [hbPreset1080, setHbPreset1080] = useState('H.265 NVENC 1080p');
+  const [hbPreset4k, setHbPreset4k] = useState('H.265 NVENC 2160p 4K');
   const [transSaved, setTransSaved] = useState(false);
   const [transError, setTransError] = useState<string | null>(null);
+  const [transDirty, setTransDirty] = useState(false);
 
+  // Security
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [secSaved, setSecSaved] = useState(false);
   const [secError, setSecError] = useState<string | null>(null);
 
-  const [seeded, setSeeded] = useState(false);
-  if (data && !seeded) {
+  // Seed from server — useEffect to avoid setState-during-render anti-pattern
+  useEffect(() => {
+    if (!data) return;
     setCron(data.scheduler_cron ?? '');
     setSchedEnabled(!!data.scheduler_cron);
     setRunAtStartup(data.scheduler_run_at_startup === 'true');
@@ -133,138 +185,306 @@ export default function Settings() {
     setSftpUser(data.sftp_username || REDACTED);
     setSftpPass(data.sftp_password || REDACTED);
     setHbCli(data.handbrake_cli);
-    setHbPreset1080(data.handbrake_preset_1080 || PRESETS[0]);
-    setHbPreset4k(data.handbrake_preset_4k || PRESETS[1]);
-    setSeeded(true);
-  }
+    setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
+    setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
+    setSchedDirty(false);
+    setConnDirty(false);
+    setTransDirty(false);
+  }, [data]);
 
   const mut = useMutation({
     mutationFn: updateSettings,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
-  const save = async (
+  async function save(
     payload: SettingsUpdate,
     setSaved: (v: boolean) => void,
-    setError: (v: string | null) => void
-  ) => {
+    setError: (v: string | null) => void,
+    setDirty?: (v: boolean) => void,
+  ) {
     setError(null);
     try {
       await mut.mutateAsync(payload);
       setSaved(true);
+      setDirty?.(false);
       setTimeout(() => setSaved(false), 3000);
     } catch (e: unknown) {
-      setSaved(false);
       setError(e instanceof Error ? e.message : 'Save failed');
     }
-  };
+  }
 
-  if (isLoading) return <div className="p-8 text-gray-500">Loading settings…</div>;
+  const cronDescription = cron ? cronDesc(cron) : '';
+  const cronIsValid = !cron || cronValid(cron);
+  const pwMismatch = !!(newPw && confirmPw && newPw !== confirmPw);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Settings</h1>
+    <main id="settings-main" aria-labelledby="settings-heading" className="mx-auto max-w-2xl p-8">
+      <h1 id="settings-heading" className="mb-6 font-display text-2xl text-fg">Settings</h1>
 
-      <Section
-        title="Scheduler"
-        onSave={() => save(
-          { scheduler_cron: schedEnabled ? cron : null,
-            scheduler_run_at_startup: runAtStartup ? 'true' : 'false' },
-          setSchedSaved, setSchedError
-        )}
-        saving={mut.isPending}
-        saved={schedSaved}
-        error={schedError}
-      >
-        <Field label="Run at startup">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={runAtStartup}
-              onChange={e => setRunAtStartup(e.target.checked)} className="h-4 w-4" />
-            Trigger a scan when the server starts
-          </label>
-        </Field>
-        <Field label="Enable schedule">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={schedEnabled}
-              onChange={e => setSchedEnabled(e.target.checked)} className="h-4 w-4" />
-            Run on a cron schedule
-          </label>
-        </Field>
-        {schedEnabled && (
-          <Field label="Cron expression">
-            <Input value={cron} onChange={setCron} placeholder="0 3 * * *" />
-            {cron && <p className="mt-1 text-xs text-gray-500">{cronDescription(cron)}</p>}
-            {data?.scheduler_next_run && (
-              <p className="mt-1 text-xs text-gray-400">
-                Next run: {new Date(data.scheduler_next_run).toLocaleString()}
-              </p>
+      {/* ── Scheduler ── */}
+      <section aria-labelledby="sched-heading" className="mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
+            <h2 id="sched-heading" className="font-display text-lg text-fg">
+              Scheduler
+            </h2>
+            {schedDirty && <DirtyDot />}
+          </CardHeader>
+          <CardContent className="space-y-5 pt-5">
+            <div className="flex items-start gap-3">
+              <input id="run-at-startup" type="checkbox" checked={runAtStartup}
+                onChange={e => { setRunAtStartup(e.target.checked); setSchedDirty(true); }}
+                className="mt-0.5 h-4 w-4 rounded accent-accent" />
+              <label htmlFor="run-at-startup" className="cursor-pointer text-sm text-fg">
+                Run at startup
+                <span className="mt-0.5 block text-xs text-muted">
+                  Trigger a scan each time the server starts
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <input id="sched-enabled" type="checkbox" checked={schedEnabled}
+                onChange={e => { setSchedEnabled(e.target.checked); setSchedDirty(true); }}
+                className="mt-0.5 h-4 w-4 rounded accent-accent" />
+              <label htmlFor="sched-enabled" className="cursor-pointer text-sm text-fg">
+                Enable schedule
+                <span className="mt-0.5 block text-xs text-muted">
+                  Run a scan on a recurring cron schedule
+                </span>
+              </label>
+            </div>
+
+            {schedEnabled && (
+              <Field htmlFor="cron-input" label="Cron expression">
+                <Input id="cron-input" value={cron} placeholder="0 3 * * *"
+                  aria-describedby={cron ? 'cron-desc' : undefined}
+                  aria-invalid={cron !== '' && !cronIsValid}
+                  onChange={e => { setCron(e.target.value); setSchedDirty(true); }}
+                  className={cron && !cronIsValid ? 'border-state-failed focus:ring-state-failed/50' : ''} />
+                <div id="cron-desc" className="mt-1 space-y-0.5">
+                  {cron && cronIsValid && (
+                    <p className="text-xs text-accent">{cronDescription}</p>
+                  )}
+                  {cron && !cronIsValid && (
+                    <p role="alert" className="text-xs text-state-failed">
+                      Invalid cron expression
+                    </p>
+                  )}
+                  {data?.scheduler_next_run && cronIsValid && (
+                    <p className="text-xs text-muted">
+                      Next run:{' '}
+                      {new Date(data.scheduler_next_run).toLocaleString(undefined, {
+                        timeZoneName: 'short',
+                      })}
+                    </p>
+                  )}
+                  <a href="https://crontab.guru" target="_blank" rel="noreferrer"
+                    className="block text-xs text-accent hover:underline">
+                    crontab.guru →
+                  </a>
+                </div>
+              </Field>
             )}
-            <a href="https://crontab.guru" target="_blank" rel="noreferrer"
-              className="mt-1 block text-xs text-blue-500 hover:underline">
-              crontab.guru →
-            </a>
-          </Field>
-        )}
-      </Section>
 
-      <Section
-        title="Connections"
-        onSave={() => save(
-          { sonarr_url: sonarrUrl, sonarr_api_key: sonarrKey,
-            radarr_url: radarrUrl, radarr_api_key: radarrKey,
-            sftp_host: sftpHost, sftp_port: sftpPort,
-            sftp_username: sftpUser, sftp_password: sftpPass },
-          setConnSaved, setConnError
-        )}
-        saving={mut.isPending} saved={connSaved} error={connError}
-      >
-        <Field label="Sonarr URL"><Input value={sonarrUrl} onChange={setSonarrUrl} /></Field>
-        <Field label="Sonarr API key"><MaskedInput value={sonarrKey} onChange={setSonarrKey} /></Field>
-        <Field label="Radarr URL"><Input value={radarrUrl} onChange={setRadarrUrl} /></Field>
-        <Field label="Radarr API key"><MaskedInput value={radarrKey} onChange={setRadarrKey} /></Field>
-        <Field label="SFTP host"><Input value={sftpHost} onChange={setSftpHost} /></Field>
-        <Field label="SFTP port"><Input value={sftpPort} onChange={setSftpPort} /></Field>
-        <Field label="SFTP username"><MaskedInput value={sftpUser} onChange={setSftpUser} /></Field>
-        <Field label="SFTP password"><MaskedInput value={sftpPass} onChange={setSftpPass} /></Field>
-      </Section>
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <Button size="sm"
+                onClick={() => save(
+                  { scheduler_cron: schedEnabled && cronIsValid ? cron || null : null,
+                    scheduler_run_at_startup: runAtStartup ? 'true' : 'false' },
+                  setSchedSaved, setSchedError, setSchedDirty,
+                )}
+                disabled={mut.isPending || (schedEnabled && !cronIsValid)}
+                aria-busy={mut.isPending}
+                aria-label="Save Scheduler settings">
+                {mut.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <StatusMessage saving={mut.isPending} saved={schedSaved} error={schedError} />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
 
-      <Section
-        title="Transcoding"
-        onSave={() => save(
-          { handbrake_cli: hbCli, handbrake_preset_1080: hbPreset1080, handbrake_preset_4k: hbPreset4k },
-          setTransSaved, setTransError
-        )}
-        saving={mut.isPending} saved={transSaved} error={transError}
-      >
-        <Field label="HandBrake CLI path">
-          <Input value={hbCli} onChange={setHbCli} placeholder="C:\...\HandBrakeCLI.exe" />
-        </Field>
-        <Field label="1080p preset">
-          <Input value={hbPreset1080} onChange={setHbPreset1080} placeholder="H.265 NVENC 1080p" />
-        </Field>
-        <Field label="4K preset">
-          <Input value={hbPreset4k} onChange={setHbPreset4k} placeholder="H.265 NVENC 2160p 4K" />
-        </Field>
-      </Section>
+      {/* ── Connections ── */}
+      <section aria-labelledby="conn-heading" className="mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
+            <h2 id="conn-heading" className="font-display text-lg text-fg">Connections</h2>
+            {connDirty && <DirtyDot />}
+          </CardHeader>
+          <CardContent className="space-y-4 pt-5">
 
-      <Section
-        title="Security"
-        onSave={() => {
-          if (newPw !== confirmPw) { setSecError('Passwords do not match'); return; }
-          save({ current_password: currentPw, new_password: newPw }, setSecSaved, setSecError);
-        }}
-        saving={mut.isPending} saved={secSaved} error={secError}
-      >
-        <Field label="Current password">
-          <Input type="password" value={currentPw} onChange={setCurrentPw} />
-        </Field>
-        <Field label="New password">
-          <Input type="password" value={newPw} onChange={setNewPw} />
-        </Field>
-        <Field label="Confirm new password">
-          <Input type="password" value={confirmPw} onChange={setConfirmPw} />
-        </Field>
-      </Section>
-    </div>
+            {/* Sonarr + Radarr side-by-side */}
+            <div className="grid grid-cols-2 gap-4">
+              <SubCard title="Sonarr">
+                <LabeledField htmlFor="sonarr-url" label="URL">
+                  <Input id="sonarr-url" value={sonarrUrl}
+                    onChange={e => { setSonarrUrl(e.target.value); setConnDirty(true); }} />
+                </LabeledField>
+                <LabeledField htmlFor="sonarr-key" label="API key">
+                  <MaskedInput id="sonarr-key" fieldLabel="Sonarr API key"
+                    value={sonarrKey} onChange={v => { setSonarrKey(v); setConnDirty(true); }} />
+                </LabeledField>
+                <TestButton service="sonarr" />
+              </SubCard>
+
+              <SubCard title="Radarr">
+                <LabeledField htmlFor="radarr-url" label="URL">
+                  <Input id="radarr-url" value={radarrUrl}
+                    onChange={e => { setRadarrUrl(e.target.value); setConnDirty(true); }} />
+                </LabeledField>
+                <LabeledField htmlFor="radarr-key" label="API key">
+                  <MaskedInput id="radarr-key" fieldLabel="Radarr API key"
+                    value={radarrKey} onChange={v => { setRadarrKey(v); setConnDirty(true); }} />
+                </LabeledField>
+                <TestButton service="radarr" />
+              </SubCard>
+            </div>
+
+            {/* SFTP full-width */}
+            <SubCard title="SFTP">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <LabeledField htmlFor="sftp-host" label="Host">
+                    <Input id="sftp-host" value={sftpHost}
+                      onChange={e => { setSftpHost(e.target.value); setConnDirty(true); }} />
+                  </LabeledField>
+                </div>
+                <LabeledField htmlFor="sftp-port" label="Port">
+                  <Input id="sftp-port" value={sftpPort}
+                    onChange={e => { setSftpPort(e.target.value); setConnDirty(true); }} />
+                </LabeledField>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <LabeledField htmlFor="sftp-user" label="Username">
+                  <MaskedInput id="sftp-user" fieldLabel="SFTP username"
+                    value={sftpUser} onChange={v => { setSftpUser(v); setConnDirty(true); }} />
+                </LabeledField>
+                <LabeledField htmlFor="sftp-pass" label="Password">
+                  <MaskedInput id="sftp-pass" fieldLabel="SFTP password"
+                    value={sftpPass} onChange={v => { setSftpPass(v); setConnDirty(true); }} />
+                </LabeledField>
+              </div>
+              <TestButton service="sftp" />
+            </SubCard>
+
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <Button size="sm"
+                onClick={() => save(
+                  { sonarr_url: sonarrUrl, sonarr_api_key: sonarrKey,
+                    radarr_url: radarrUrl, radarr_api_key: radarrKey,
+                    sftp_host: sftpHost, sftp_port: sftpPort,
+                    sftp_username: sftpUser, sftp_password: sftpPass },
+                  setConnSaved, setConnError, setConnDirty,
+                )}
+                disabled={mut.isPending}
+                aria-busy={mut.isPending}
+                aria-label="Save Connections settings">
+                {mut.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <StatusMessage saving={mut.isPending} saved={connSaved} error={connError} />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Encoder ── */}
+      <section aria-labelledby="enc-heading" className="mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
+            <h2 id="enc-heading" className="font-display text-lg text-fg">Encoder</h2>
+            {transDirty && <DirtyDot />}
+          </CardHeader>
+          <CardContent className="space-y-4 pt-5">
+            <Field htmlFor="hb-cli" label="HandBrake CLI">
+              <Input id="hb-cli" value={hbCli} placeholder="C:\...\HandBrakeCLI.exe"
+                className="font-mono text-xs"
+                onChange={e => { setHbCli(e.target.value); setTransDirty(true); }} />
+            </Field>
+            <Field htmlFor="hb-1080" label="1080p preset">
+              <Input id="hb-1080" value={hbPreset1080}
+                onChange={e => { setHbPreset1080(e.target.value); setTransDirty(true); }} />
+            </Field>
+            <Field htmlFor="hb-4k" label="4K preset">
+              <Input id="hb-4k" value={hbPreset4k}
+                onChange={e => { setHbPreset4k(e.target.value); setTransDirty(true); }} />
+            </Field>
+
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <Button size="sm"
+                onClick={() => save(
+                  { handbrake_cli: hbCli, handbrake_preset_1080: hbPreset1080,
+                    handbrake_preset_4k: hbPreset4k },
+                  setTransSaved, setTransError, setTransDirty,
+                )}
+                disabled={mut.isPending}
+                aria-busy={mut.isPending}
+                aria-label="Save Encoder settings">
+                {mut.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <StatusMessage saving={mut.isPending} saved={transSaved} error={transError} />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Security ── */}
+      <section aria-labelledby="sec-heading" className="mb-6">
+        <Card>
+          <CardHeader className="border-b border-border">
+            <h2 id="sec-heading" className="font-display text-lg text-fg">Security</h2>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-5">
+            <Field htmlFor="cur-pw" label="Current password">
+              <Input id="cur-pw" type="password" value={currentPw}
+                onChange={e => setCurrentPw(e.target.value)} />
+            </Field>
+            <Field htmlFor="new-pw" label="New password">
+              <Input id="new-pw" type="password" value={newPw}
+                onChange={e => setNewPw(e.target.value)} />
+            </Field>
+            <Field htmlFor="confirm-pw" label="Confirm new">
+              <div>
+                <Input id="confirm-pw" type="password" value={confirmPw}
+                  aria-describedby={pwMismatch ? 'pw-mismatch' : undefined}
+                  aria-invalid={pwMismatch}
+                  className={pwMismatch ? 'border-state-failed focus:ring-state-failed/50' : ''}
+                  onChange={e => setConfirmPw(e.target.value)} />
+                {pwMismatch && (
+                  <p id="pw-mismatch" role="alert" className="mt-1 text-xs text-state-failed">
+                    Passwords do not match
+                  </p>
+                )}
+              </div>
+            </Field>
+
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <Button size="sm"
+                onClick={() => {
+                  if (pwMismatch) { setSecError('Passwords do not match'); return; }
+                  if (!newPw) { setSecError('New password is required'); return; }
+                  save({ current_password: currentPw, new_password: newPw },
+                    setSecSaved, setSecError);
+                }}
+                disabled={mut.isPending || pwMismatch}
+                aria-busy={mut.isPending}
+                aria-label="Save Security settings">
+                {mut.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <StatusMessage saving={mut.isPending} saved={secSaved} error={secError} />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+    </main>
   );
 }

@@ -100,3 +100,38 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         state.scheduler.reschedule(new_cron)
 
     return {"updated": updated}
+
+
+@router.post("/test/{service}", dependencies=[Depends(require_auth)])
+def test_connection(service: str, db: Session = Depends(get_db)):
+    cfg = _cfg.settings
+    if service not in ("sonarr", "radarr", "sftp"):
+        raise HTTPException(status_code=400, detail="Unknown service")
+    try:
+        if service in ("sonarr", "radarr"):
+            import requests as _req
+            if service == "sonarr":
+                url = get_effective(db, "sonarr_url", cfg.SONARR_URL)
+                key = get_effective(db, "sonarr_api_key", cfg.SONARR_API_KEY)
+            else:
+                url = get_effective(db, "radarr_url", cfg.RADARR_URL)
+                key = get_effective(db, "radarr_api_key", cfg.RADARR_API_KEY)
+            r = _req.get(
+                f"{url.rstrip('/')}/api/v3/system/status",
+                headers={"X-Api-Key": key},
+                timeout=5,
+            )
+            return {"ok": r.ok, "code": r.status_code}
+        else:  # sftp
+            import paramiko
+            host = get_effective(db, "sftp_host", cfg.SFTP_HOST)
+            port = int(get_effective(db, "sftp_port", str(cfg.SFTP_PORT)))
+            username = get_effective(db, "sftp_username", cfg.SFTP_USERNAME)
+            password = get_effective(db, "sftp_password", cfg.SFTP_PASSWORD)
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(host, port=port, username=username, password=password, timeout=5)
+            client.close()
+            return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

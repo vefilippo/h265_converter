@@ -41,3 +41,6 @@ export const getSettings = (): Promise<Settings> =>
 
 export const updateSettings = (payload: SettingsUpdate): Promise<{ updated: string[] }> =>
   api.put<{ updated: string[] }>('/api/settings', payload);
+
+export const testConnection = (service: 'sonarr' | 'radarr' | 'sftp'): Promise<{ ok: boolean; error?: string }> =>
+  api.post<{ ok: boolean; error?: string }>(`/api/settings/test/${service}`);
