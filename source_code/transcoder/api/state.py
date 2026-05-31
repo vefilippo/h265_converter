@@ -70,3 +70,6 @@ class ScanStatus:
 # Singletons (constructed once at import).
 controller = WorkerController(SessionLocal, build_clients())
 scan_status = ScanStatus()
+
+from transcoder.scheduler import SchedulerController
+scheduler: SchedulerController = SchedulerController()

@@ -27,3 +27,36 @@ export interface ScanStatus {
 }
 export interface LogLine { seq: number; ts: string; level: string; message: string; }
 export interface LogPage { lines: LogLine[]; last_seq: number; }
+
+export interface Settings {
+  scheduler_cron: string | null;
+  scheduler_run_at_startup: string;
+  sonarr_url: string;
+  sonarr_api_key: string;
+  radarr_url: string;
+  radarr_api_key: string;
+  sftp_host: string;
+  sftp_port: string;
+  sftp_username: string;
+  sftp_password: string;
+  handbrake_cli: string;
+  handbrake_preset: string;
+  scheduler_next_run: string | null;
+}
+
+export interface SettingsUpdate {
+  scheduler_cron?: string | null;
+  scheduler_run_at_startup?: string;
+  sonarr_url?: string;
+  sonarr_api_key?: string;
+  radarr_url?: string;
+  radarr_api_key?: string;
+  sftp_host?: string;
+  sftp_port?: string;
+  sftp_username?: string;
+  sftp_password?: string;
+  handbrake_cli?: string;
+  handbrake_preset?: string;
+  current_password?: string;
+  new_password?: string;
+}

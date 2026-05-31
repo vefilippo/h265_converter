@@ -11,6 +11,7 @@ from transcoder.engine.worker import reconcile_stale_jobs
 from transcoder.api import state
 from transcoder.config import settings
 from transcoder.api.auth import router as auth_router, require_auth
+from transcoder.api.routers import settings as settings_router
 
 log = logging.getLogger("transcoder")
 
@@ -32,9 +33,44 @@ def create_app(start_worker: bool = True) -> FastAPI:
             session.close()
         if start_worker:
             state.controller.start()
+
+        # Seed settings from env on first startup
+        import bcrypt as _bcrypt
+        from transcoder.repo import seed_settings_from_env, get_setting, set_setting
+        from transcoder.db import SessionLocal as _SL
+        _cfg = settings  # settings is already imported from transcoder.config
+        with _SL() as _db:
+            seed_settings_from_env(_db, {
+                "sonarr_url": _cfg.SONARR_URL,
+                "sonarr_api_key": _cfg.SONARR_API_KEY,
+                "radarr_url": _cfg.RADARR_URL,
+                "radarr_api_key": _cfg.RADARR_API_KEY,
+                "sftp_host": _cfg.SFTP_HOST,
+                "sftp_port": str(_cfg.SFTP_PORT),
+                "sftp_username": _cfg.SFTP_USERNAME,
+                "sftp_password": _cfg.SFTP_PASSWORD,
+                "handbrake_cli": _cfg.HANDBRAKE_CLI,
+                "handbrake_preset": _cfg.PRESET_1080,
+            })
+            if get_setting(_db, "app_password_hash") is None and _cfg.APP_PASSWORD:
+                _hash = _bcrypt.hashpw(_cfg.APP_PASSWORD.encode(), _bcrypt.gensalt()).decode()
+                set_setting(_db, "app_password_hash", _hash)
+                _db.commit()
+            _sched_cron = get_setting(_db, "scheduler_cron")
+            _sched_startup = get_setting(_db, "scheduler_run_at_startup") == "true"
+
+        # Define the scheduled job (same logic as POST /run)
+        async def _scheduled_run():
+            from transcoder.api.routers.scan import _run_full
+            _run_full()
+
+        state.scheduler.set_job_fn(_scheduled_run)
+        state.scheduler.start(_sched_cron, _sched_startup)
+
         try:
             yield
         finally:
+            state.scheduler.shutdown()
             if start_worker:
                 state.controller.shutdown()
 
@@ -58,6 +94,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(exclusions.router, dependencies=protected)
     app.include_router(stream.router, dependencies=protected)
     app.include_router(logs.router, dependencies=protected)
+    app.include_router(settings_router.router, dependencies=protected)
 
     import os
     from fastapi import Request

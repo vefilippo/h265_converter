@@ -119,3 +119,36 @@ class LogLine(BaseModel):
 class LogPage(BaseModel):
     lines: list[LogLine]
     last_seq: int
+
+
+class SettingsOut(BaseModel):
+    scheduler_cron: str | None = None
+    scheduler_run_at_startup: str = "false"
+    sonarr_url: str = ""
+    sonarr_api_key: str = ""
+    radarr_url: str = ""
+    radarr_api_key: str = ""
+    sftp_host: str = ""
+    sftp_port: str = "22"
+    sftp_username: str = ""
+    sftp_password: str = ""
+    handbrake_cli: str = ""
+    handbrake_preset: str = "H.265 NVENC 1080p"
+    scheduler_next_run: str | None = None
+
+
+class SettingsUpdate(BaseModel):
+    scheduler_cron: str | None = None
+    scheduler_run_at_startup: str | None = None
+    sonarr_url: str | None = None
+    sonarr_api_key: str | None = None
+    radarr_url: str | None = None
+    radarr_api_key: str | None = None
+    sftp_host: str | None = None
+    sftp_port: str | None = None
+    sftp_username: str | None = None
+    sftp_password: str | None = None
+    handbrake_cli: str | None = None
+    handbrake_preset: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None

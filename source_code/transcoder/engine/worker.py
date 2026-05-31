@@ -4,6 +4,7 @@ import os
 import re
 
 from transcoder.config import settings
+from transcoder.repo import get_effective
 
 log = logging.getLogger("transcoder")
 from transcoder.convert import convert_with_handbrake, TranscodeCancelled
@@ -81,16 +82,23 @@ def process_one_job(
         job.phase = "downloading"
         job.started_at = utcnow()
         job.progress = 0
-        job.preset = settings.PRESET_4K if item.resolution > 1080 else settings.PRESET_1080
+        preset_4k = get_effective(session, "handbrake_preset_4k", settings.PRESET_4K)
+        preset_1080 = get_effective(session, "handbrake_preset_1080", settings.PRESET_1080)
+        job.preset = preset_4k if item.resolution > 1080 else preset_1080
         session.commit()
         job_log(session, job, f"Downloading {item.title}")
 
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
         tmp_file = os.path.join("./tmp", os.path.basename(file_path))
-        dl = download(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
-                      settings.SFTP_PASSWORD, file_path, tmp_file,
-                      progress_cb=_progress_writer(session, job))
+        dl = download(
+            get_effective(session, "sftp_host", settings.SFTP_HOST),
+            int(get_effective(session, "sftp_port", str(settings.SFTP_PORT))),
+            get_effective(session, "sftp_username", settings.SFTP_USERNAME),
+            get_effective(session, "sftp_password", settings.SFTP_PASSWORD),
+            file_path, tmp_file,
+            progress_cb=_progress_writer(session, job),
+        )
         if isinstance(dl, dict) and dl.get("success") is False:
             raise RuntimeError(f"download failed: {dl.get('message')}")
 
@@ -101,9 +109,12 @@ def process_one_job(
         job.progress = 0
         session.commit()
         job_log(session, job, f"Transcoding {item.title} (preset {job.preset})")
-        output_file, exclude_flag = convert(tmp_file, out_name, job.preset,
-                                            progress_cb=_progress_writer(session, job),
-                                            cancel_event=cancel_event)
+        output_file, exclude_flag = convert(
+            tmp_file, out_name, job.preset,
+            progress_cb=_progress_writer(session, job),
+            cancel_event=cancel_event,
+            handbrake_cli=get_effective(session, "handbrake_cli", settings.HANDBRAKE_CLI),
+        )
 
         if output_file is None:
             job_log(session, job, "HandBrake failed")
@@ -131,9 +142,14 @@ def process_one_job(
             job.progress = 0
             session.commit()
             job_log(session, job, f"Uploading {out_name}")
-            up = upload(settings.SFTP_HOST, settings.SFTP_PORT, settings.SFTP_USERNAME,
-                        settings.SFTP_PASSWORD, output_file, settings.WATCH_FOLDER + out_name,
-                        progress_cb=_progress_writer(session, job))
+            up = upload(
+                get_effective(session, "sftp_host", settings.SFTP_HOST),
+                int(get_effective(session, "sftp_port", str(settings.SFTP_PORT))),
+                get_effective(session, "sftp_username", settings.SFTP_USERNAME),
+                get_effective(session, "sftp_password", settings.SFTP_PASSWORD),
+                output_file, settings.WATCH_FOLDER + out_name,
+                progress_cb=_progress_writer(session, job),
+            )
             if isinstance(up, dict) and up.get("success") is False:
                 raise RuntimeError(f"upload failed: {up.get('message')}")
             client.manual_import_one(output_file)

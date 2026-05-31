@@ -4,7 +4,33 @@ from pathlib import Path
 from tqdm import tqdm
 from pathlib import PureWindowsPath
 
+from transcoder.config import settings
+
 log = logging.getLogger("transcoder")
+
+
+class SftpClient:
+    """Thin wrapper around the standalone SFTP helpers that accepts runtime-
+    overridable connection parameters (DB settings take precedence over .env)."""
+
+    def __init__(self, host=None, port=None, username=None, password=None):
+        cfg = settings
+        self.host = host or cfg.SFTP_HOST
+        self.port = int(port) if port else cfg.SFTP_PORT
+        self.username = username or cfg.SFTP_USERNAME
+        self.password = password or cfg.SFTP_PASSWORD
+
+    def upload(self, local_path, remote_path, progress_cb=None) -> dict:
+        return upload_file_via_sftp(
+            self.host, self.port, self.username, self.password,
+            local_path, remote_path, progress_cb=progress_cb,
+        )
+
+    def download(self, remote_path, local_path, progress_cb=None) -> dict:
+        return download_file_via_sftp(
+            self.host, self.port, self.username, self.password,
+            remote_path, local_path, progress_cb=progress_cb,
+        )
 
 def upload_file_via_sftp(host, port, username, password,
                          local_path, remote_path, progress_cb=None) -> dict:

@@ -6,6 +6,7 @@ import Exclusions from "./pages/Exclusions";
 import Jobs from "./pages/Jobs";
 import Library from "./pages/Library";
 import Logs from "./pages/Logs";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/exclusions" element={<Exclusions />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
       </div>

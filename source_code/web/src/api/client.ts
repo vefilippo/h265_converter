@@ -31,4 +31,13 @@ export const api = {
   get: <T>(p: string) => request<T>("GET", p),
   post: <T>(p: string, body?: unknown) => request<T>("POST", p, body),
   del: <T>(p: string) => request<T>("DELETE", p),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
 };
+
+import type { Settings, SettingsUpdate } from './types';
+
+export const getSettings = (): Promise<Settings> =>
+  api.get<Settings>('/api/settings');
+
+export const updateSettings = (payload: SettingsUpdate): Promise<{ updated: string[] }> =>
+  api.put<{ updated: string[] }>('/api/settings', payload);

@@ -11,3 +11,5 @@ itsdangerous>=2.1
 pystray>=0.19
 Pillow>=10
 winotify>=1.1
+apscheduler>=3.10
+bcrypt>=4.0

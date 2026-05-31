@@ -5,6 +5,7 @@ from transcoder import repo
 from transcoder.engine.eligibility import compute_eligibility
 from transcoder.history import _parse_iso_z
 from transcoder.models import episode_exclusion_key, movie_exclusion_key
+from transcoder.repo import get_effective
 
 log = logging.getLogger("transcoder")
 

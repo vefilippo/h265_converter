@@ -56,3 +56,17 @@ def excluded_keys(session, source: str) -> set[str]:
     return {
         e.key for e in session.query(Exclusion).filter_by(source=source).all()
     }
+
+
+def get_effective(db, key: str, fallback: str) -> str:
+    """Return DB setting value if present, else fallback."""
+    val = get_setting(db, key)
+    return val if val is not None else fallback
+
+
+def seed_settings_from_env(db, mapping: dict) -> None:
+    """Write key->value into Setting table only if key is absent."""
+    for key, value in mapping.items():
+        if get_setting(db, key) is None and value:
+            set_setting(db, key, value)
+    db.commit()
