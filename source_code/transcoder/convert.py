@@ -20,11 +20,11 @@ def parse_handbrake_progress(line: str):
     return int(match.group(1)) if match else None
 
 
-def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None, cancel_event=None):
+def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None, cancel_event=None, handbrake_cli=None):
     output_file = settings.OUTPUT_FOLDER + output_filename
 
     command = [
-        settings.HANDBRAKE_CLI,
+        handbrake_cli if handbrake_cli is not None else settings.HANDBRAKE_CLI,
         "-i", input_file,
         "-o", output_file,
         "--preset", preset,
