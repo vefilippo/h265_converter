@@ -1,12 +1,14 @@
+import logging
 import os
 import re
 import requests
 import datetime as dt
-from pathlib import Path
 from typing import List, Set, Tuple, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+
+log = logging.getLogger("transcoder")
 
 
 class SonarrClient:
@@ -52,7 +54,7 @@ class SonarrClient:
                 if not records:
                     break
             except Exception as exc:
-                print(f"🔴 Could not fetch Sonarr history (page {page}): {exc}")
+                log.error("Could not fetch Sonarr history (page %d): %s", page, exc)
                 break
 
             for rec in records:
@@ -142,7 +144,7 @@ class SonarrClient:
             sonarr_path = sonarr_path.replace(host_root, docker_root)
         sonarr_path = sonarr_path.replace("\\", "/")
 
-        print(f"→ Manual‑import path: {sonarr_path}")
+        log.debug("Manual-import path: %s", sonarr_path)
 
         try:
             folder = os.path.dirname(sonarr_path)
@@ -161,7 +163,7 @@ class SonarrClient:
                    and not c.get("rejections")
             ]
             if not candidates:
-                print(f"🔸 Sonarr did not recognise {sonarr_path}")
+                log.warning("Sonarr did not recognise %s", sonarr_path)
                 return
 
             info = candidates[0]
@@ -187,7 +189,7 @@ class SonarrClient:
                 timeout=120,
             )
             r2.raise_for_status()
-            print(f"🟢 Manual‑Import queued for {info['path']}")
+            log.info("Manual-import queued for %s", info['path'])
 
         except Exception as exc:
-            print(f"🔴 Manual‑Import failed for {full_path_host}: {exc}")
+            log.error("Manual-import failed for %s: %s", full_path_host, exc)

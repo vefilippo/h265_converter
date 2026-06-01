@@ -1,12 +1,14 @@
+import logging
 import os
 import re
 import requests
 import datetime as dt
-from pathlib import Path
-from typing import List, Set, Tuple, Optional
+from typing import List, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+
+log = logging.getLogger("transcoder")
 
 
 class RadarrClient:
@@ -47,8 +49,8 @@ class RadarrClient:
                 })
         return non_h265
         
-    def extract_languages(self, movie_file)-> List[dict]:
-        """Extract and format language names from episode file metadata."""
+    def extract_languages(self, movie_file) -> str:
+        """Extract and format language names from movie file metadata."""
         if 'languages' in movie_file:
             return "-".join(lang['name'] for lang in movie_file['languages']).upper()
         return "UNKNOWN"
@@ -60,7 +62,7 @@ class RadarrClient:
             radarr_path = radarr_path.replace(host_root, docker_root)
         radarr_path = radarr_path.replace("\\", "/")
 
-        print(f"→ Manual‑import path: {radarr_path}")
+        log.debug("Manual-import path: %s", radarr_path)
 
         try:
             folder = os.path.dirname(radarr_path)
@@ -78,7 +80,7 @@ class RadarrClient:
                    and not c.get("rejections")
             ]
             if not candidates:
-                print(f"🔸 Radarr did not recognise {radarr_path}")
+                log.warning("Radarr did not recognise %s", radarr_path)
                 return
 
             info = candidates[0]
@@ -102,7 +104,7 @@ class RadarrClient:
                 timeout=120,
             )
             r2.raise_for_status()
-            print(f"🟢 Manual‑Import queued for {info['path']}")
+            log.info("Manual-import queued for %s", info['path'])
 
         except Exception as exc:
-            print(f"🔴 Manual‑Import failed for {full_path_host}: {exc}")
+            log.error("Manual-import failed for %s: %s", full_path_host, exc)

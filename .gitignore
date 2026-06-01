@@ -13,6 +13,8 @@ env/
 # NOTE: transcoder/config.py is now the secret-free pydantic-settings module
 # (real values come from .env, which stays ignored), so it IS tracked.
 .env
+.env.local
+.env.*.local
 
 # Runtime state & artifacts
 source_code/tmp/
@@ -25,18 +27,37 @@ out/
 *.db-journal
 *.db-wal
 *.db-shm
+*.db-bak
 *.sqlite
 *.sqlite3
 *.migrated
+*.bak
 
 # Legacy state files (now in DB)
 last_history_timestamp.txt
 excluded_episodes.csv
 excluded_movies.csv
 
+# Test / coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# IDE / editor
+.idea/
+.vscode/
+
 # OS
 Thumbs.db
 .DS_Store
+*~
+*.swp
+*.swo
 
 # Frontend
 source_code/web/node_modules/
