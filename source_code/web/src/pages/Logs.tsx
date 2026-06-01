@@ -116,7 +116,7 @@ export default function Logs() {
               displayed.map((line) => (
                 <div key={line.seq} className="flex gap-2 leading-5">
                   <span className="text-muted shrink-0 whitespace-nowrap">
-                    {line.ts.replace("T", " ").replace("Z", "")}
+                    {new Date(line.ts).toLocaleString(undefined, { hour12: false })}
                   </span>
                   <span className={cn("shrink-0 font-semibold w-16", levelClass(line.level))}>
                     {line.level}

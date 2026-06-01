@@ -6,6 +6,8 @@ Double-click the tray icon to open the web UI; right-click for the menu.
 import http.cookiejar
 import json
 import logging
+import logging.handlers
+import os
 import pathlib
 import subprocess
 import sys
@@ -14,15 +16,36 @@ import time
 import urllib.request
 import webbrowser
 
-_LOG_FILE = pathlib.Path(__file__).parent / "log" / "tray.log"
-_LOG_FILE.parent.mkdir(exist_ok=True)
-logging.basicConfig(
-    filename=str(_LOG_FILE),
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
+_LOG_DIR = pathlib.Path(__file__).parent / "log"
+_ARCHIVE_DIR = _LOG_DIR / "archive"
+_FMT = "%(asctime)s - %(levelname)s - %(message)s"
+
+
+def _make_daily_handler(path: pathlib.Path, backup_days: int = 30) -> logging.handlers.TimedRotatingFileHandler:
+    _ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    h = logging.handlers.TimedRotatingFileHandler(
+        str(path), when="midnight", backupCount=backup_days, encoding="utf-8", utc=False
+    )
+    h.namer = lambda name: str(_ARCHIVE_DIR / pathlib.Path(name).name)
+    h.rotator = lambda src, dst: os.rename(src, dst)
+    fmt = logging.Formatter(_FMT)
+    fmt.converter = time.localtime
+    h.setFormatter(fmt)
+    return h
+
+
+_LOG_DIR.mkdir(exist_ok=True)
+logging.root.setLevel(logging.INFO)
+logging.root.addHandler(_make_daily_handler(_LOG_DIR / "tray.log"))
+
 log = logging.getLogger("tray")
 log.info("tray.pyw starting")
+
+# Separate logger for server subprocess output — goes to server_start.log only.
+_srv_log = logging.getLogger("server_start")
+_srv_log.propagate = False
+_srv_log.setLevel(logging.INFO)
+_srv_log.addHandler(_make_daily_handler(_LOG_DIR / "server_start.log"))
 
 try:
     import pystray
@@ -194,6 +217,13 @@ def _open_ui(_icon, _item) -> None:
     webbrowser.open(BASE_URL)
 
 
+def _pipe_stream(stream, level: int) -> None:
+    for line in stream:
+        line = line.rstrip("\r\n")
+        if line:
+            _srv_log.log(level, line)
+
+
 def _start_server(_icon, _item) -> None:
     global _server_proc
     # Don't start a second instance if anything is already serving.
@@ -203,13 +233,17 @@ def _start_server(_icon, _item) -> None:
     if _server_proc and _server_proc.poll() is None:
         return
     log.info("Starting server via %s", _VENV_PY)
-    server_log = open(SOURCE_CODE_DIR / "log" / "server_start.log", "w")
     _server_proc = subprocess.Popen(
         [str(_VENV_PY), "-m", "transcoder.api"],
         cwd=str(SOURCE_CODE_DIR),
-        stdout=server_log,
-        stderr=server_log,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
+    threading.Thread(target=_pipe_stream, args=(_server_proc.stdout, logging.INFO), daemon=True).start()
+    threading.Thread(target=_pipe_stream, args=(_server_proc.stderr, logging.WARNING), daemon=True).start()
 
 
 def _stop_server(_icon, _item) -> None:
