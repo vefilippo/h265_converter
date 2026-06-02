@@ -35,9 +35,14 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
 
     start = time.time()
     log.info("Conversion Started for %s", output_filename)
+    # CREATE_NO_WINDOW (Windows only) stops HandBrakeCLI — a console app — from
+    # popping up an empty console window when launched from a service/tray with
+    # no console of its own. Flag is absent on non-Windows platforms.
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
+        creationflags=creationflags,
     )
 
     for line in process.stdout:

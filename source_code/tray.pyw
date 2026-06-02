@@ -63,6 +63,11 @@ _VENV_PY = SOURCE_CODE_DIR / ".venv" / "Scripts" / "pythonw.exe"
 if not _VENV_PY.exists():
     _VENV_PY = pathlib.Path(sys.executable)
 
+# Windows-only flag: stops console helpers (netstat/taskkill) and the server
+# child from flashing an empty console window when launched from the windowless
+# tray. Resolves to 0 on non-Windows so the calls stay portable.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 _server_proc: subprocess.Popen | None = None
 _poll_state: dict = {"prev_job_id": None, "prev_queue_len": None}
 
@@ -203,7 +208,8 @@ def _find_server_pid() -> int | None:
     """Return the PID of whatever process is listening on port 8765, or None."""
     try:
         out = subprocess.check_output(
-            ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL
+            ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL,
+            creationflags=_NO_WINDOW,
         )
         for line in out.splitlines():
             if ":8765 " in line and "LISTENING" in line:
@@ -241,6 +247,7 @@ def _start_server(_icon, _item) -> None:
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=_NO_WINDOW,
     )
     threading.Thread(target=_pipe_stream, args=(_server_proc.stdout, logging.INFO), daemon=True).start()
     threading.Thread(target=_pipe_stream, args=(_server_proc.stderr, logging.WARNING), daemon=True).start()
@@ -259,7 +266,8 @@ def _stop_server(_icon, _item) -> None:
         log.info("Killing external server PID %s", pid)
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True,
+                           creationflags=_NO_WINDOW)
         except Exception as exc:
             log.warning("taskkill failed: %s", exc)
 
