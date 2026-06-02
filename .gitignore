@@ -16,6 +16,9 @@ env/
 .env.local
 .env.*.local
 
+# Local Claude Code settings (per-machine permissions; not for sharing)
+.claude/settings.local.json
+
 # Runtime state & artifacts
 source_code/tmp/
 source_code/out/

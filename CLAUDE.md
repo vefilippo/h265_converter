@@ -91,10 +91,10 @@ auto-imported on first run and renamed `*.migrated`. Config is loaded from `sour
 
 ## External Dependencies
 
-- **HandBrake CLI**: `C:\Users\vefil\Documents\HandBrakeCLI\HandBrakeCLI.exe`
+- **HandBrake CLI**: path configured via `HANDBRAKE_CLI` (e.g. `C:\path\to\HandBrakeCLI.exe`)
   - Presets: `"H.265 NVENC 1080p"` and `"H.265 NVENC 2160p 4K"`
-- **Sonarr**: `http://your-arr-host:8989`
-- **Radarr**: `http://your-arr-host:7878`
-- **SFTP**: `192.168.x.x:22`
+- **Sonarr**: `http://<sonarr-host>:<port>` (e.g. `http://localhost:8989`)
+- **Radarr**: `http://<radarr-host>:<port>` (e.g. `http://localhost:7878`)
+- **SFTP**: `<sftp-host>:22`
 
-All credentials are hardcoded in `config.py`.
+All endpoints and credentials are configured via `.env` (see `.env.example`); nothing is hardcoded.
