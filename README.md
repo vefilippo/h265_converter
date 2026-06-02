@@ -124,3 +124,7 @@ Sonarr/Radarr API
 | `source_code/tray.pyw` | Windows tray launcher |
 | `scripts/` | Windows batch scripts |
 | `log/` | Daily-rotating logs (gitignored); 30-day archive in `log/archive/` |
+
+## License
+
+Released under the [MIT License](LICENSE).
