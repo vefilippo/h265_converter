@@ -42,7 +42,16 @@ class SchedulerController:
             minute=minute, hour=hour, day=day, month=month, day_of_week=dow
         )
         self._scheduler.add_job(
-            self._job_fn, trigger, id="scheduled_scan", replace_existing=True
+            self._job_fn,
+            trigger,
+            id="scheduled_scan",
+            replace_existing=True,
+            # APScheduler's default misfire_grace_time is 1s, so a brief
+            # event-loop stall at the trigger time silently drops the run
+            # (this skipped the 1am nightly scan). Allow it to run up to an
+            # hour late instead, and coalesce multiple missed fires into one.
+            misfire_grace_time=3600,
+            coalesce=True,
         )
 
     @staticmethod
