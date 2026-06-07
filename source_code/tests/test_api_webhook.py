@@ -112,3 +112,71 @@ def test_process_webhook_coalesces_pending(monkeypatch):
         webhook._process_webhook("sonarr", "Breaking Bad")
     finally:
         webhook._pending.discard(("sonarr", "Breaking Bad"))
+
+
+def _seed_db_creds(Session, user="hookuser", pw="hookpass"):
+    from transcoder.repo import set_setting
+    pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    s = Session()
+    set_setting(s, "webhook_username", user)
+    set_setting(s, "webhook_password_hash", pw_hash)
+    s.commit()
+    s.close()
+
+
+def test_endpoint_accepts_import_and_schedules(api, monkeypatch):
+    client, Session = api
+    monkeypatch.setattr(webhook, "SessionLocal", Session)
+    _seed_db_creds(Session)
+    scheduled = {}
+    monkeypatch.setattr(webhook, "_process_webhook",
+                        lambda source, title: scheduled.update(source=source, title=title))
+
+    r = client.post(
+        "/api/webhook/sonarr",
+        headers={"Authorization": _basic("hookuser", "hookpass")},
+        json={"eventType": "Download", "series": {"title": "Breaking Bad"}},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "accepted"
+    assert scheduled == {"source": "sonarr", "title": "Breaking Bad"}
+
+
+def test_endpoint_rejects_bad_auth(api, monkeypatch):
+    client, Session = api
+    monkeypatch.setattr(webhook, "SessionLocal", Session)
+    _seed_db_creds(Session)
+    r = client.post(
+        "/api/webhook/sonarr",
+        headers={"Authorization": _basic("hookuser", "WRONG")},
+        json={"eventType": "Download", "series": {"title": "X"}},
+    )
+    assert r.status_code == 401
+
+
+def test_endpoint_unknown_source_404(api, monkeypatch):
+    client, Session = api
+    monkeypatch.setattr(webhook, "SessionLocal", Session)
+    _seed_db_creds(Session)
+    r = client.post(
+        "/api/webhook/plex",
+        headers={"Authorization": _basic("hookuser", "hookpass")},
+        json={"eventType": "Download"},
+    )
+    assert r.status_code == 404
+
+
+def test_endpoint_test_event_is_noop(api, monkeypatch):
+    client, Session = api
+    monkeypatch.setattr(webhook, "SessionLocal", Session)
+    _seed_db_creds(Session)
+    called = {"n": 0}
+    monkeypatch.setattr(webhook, "_process_webhook", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+    r = client.post(
+        "/api/webhook/sonarr",
+        headers={"Authorization": _basic("hookuser", "hookpass")},
+        json={"eventType": "Test", "series": {"title": "Breaking Bad"}},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ignored"
+    assert called["n"] == 0

@@ -5,7 +5,7 @@ import logging
 import threading
 
 import bcrypt
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from transcoder.api.state import build_clients, controller
 from transcoder.db import SessionLocal
@@ -14,6 +14,8 @@ from transcoder.engine.queue import enqueue_eligible
 from transcoder.repo import get_setting
 
 log = logging.getLogger("transcoder")
+
+router = APIRouter(prefix="/api")
 
 _UNAUTH = {"WWW-Authenticate": "Basic"}
 
@@ -98,3 +100,25 @@ def _process_webhook(source: str, title: str) -> None:
     finally:
         with _pending_lock:
             _pending.discard(key)
+
+
+@router.post("/webhook/{source}")
+async def receive_webhook(source: str, request: Request, background: BackgroundTasks):
+    verify_webhook_auth(request)
+    if source not in ("sonarr", "radarr"):
+        raise HTTPException(404, "unknown source")
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "invalid JSON body")
+
+    if payload.get("eventType") != "Download":
+        return {"status": "ignored", "event": payload.get("eventType")}
+
+    title = extract_title(source, payload)
+    if not title:
+        log.warning("Webhook %s import event with no title in payload", source)
+        return {"status": "ignored", "reason": "no title"}
+
+    background.add_task(_process_webhook, source, title)
+    return {"status": "accepted", "title": title}

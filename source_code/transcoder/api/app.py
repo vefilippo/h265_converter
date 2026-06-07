@@ -88,8 +88,10 @@ def create_app(start_worker: bool = True) -> FastAPI:
 
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, same_site="lax")
 
-    # Open: health (defined above) + auth.
+    # Open: health (defined above) + auth + webhook (self-authenticates via Basic).
     app.include_router(auth_router)
+    from transcoder.api.routers import webhook
+    app.include_router(webhook.router)
 
     # Protected API routers.
     from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs
