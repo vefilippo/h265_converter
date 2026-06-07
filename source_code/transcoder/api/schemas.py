@@ -145,6 +145,8 @@ class SettingsOut(BaseModel):
     handbrake_preset_1080: str = "H.265 NVENC 1080p"
     handbrake_preset_4k: str = "H.265 NVENC 2160p 4K"
     scheduler_next_run: str | None = None
+    webhook_username: str = ""
+    webhook_password_set: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -163,3 +165,5 @@ class SettingsUpdate(BaseModel):
     handbrake_preset_4k: str | None = None
     current_password: str | None = None
     new_password: str | None = None
+    webhook_username: str | None = None
+    webhook_password: str | None = None
