@@ -43,6 +43,8 @@ def get_settings(db: Session = Depends(get_db)):
         handbrake_preset_1080=get_effective(db, "handbrake_preset_1080", cfg.PRESET_1080),
         handbrake_preset_4k=get_effective(db, "handbrake_preset_4k", cfg.PRESET_4K),
         scheduler_next_run=state.scheduler.next_run(),
+        webhook_username=get_effective(db, "webhook_username", ""),
+        webhook_password_set=bool(get_setting(db, "webhook_password_hash")),
     )
 
 
@@ -69,7 +71,7 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     simple_fields = [
         "sonarr_url", "radarr_url", "sftp_host", "sftp_port", "sftp_username",
         "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
-        "scheduler_run_at_startup",
+        "scheduler_run_at_startup", "webhook_username",
     ]
     for field in simple_fields:
         val = getattr(body, field, None)
@@ -82,6 +84,11 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         if val and val != _REDACTED:
             set_setting(db, field, val)
             updated.append(field)
+
+    if body.webhook_password is not None and body.webhook_password not in ("", _REDACTED):
+        wh_hash = bcrypt.hashpw(body.webhook_password.encode(), bcrypt.gensalt()).decode()
+        set_setting(db, "webhook_password_hash", wh_hash)
+        updated.append("webhook_password")
 
     schedule_changed = False
     if body.scheduler_cron is not None or "scheduler_cron" in (body.model_fields_set or set()):
