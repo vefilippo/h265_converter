@@ -90,7 +90,7 @@ def test_process_webhook_discovers_and_enqueues(monkeypatch):
         calls["discover"] = ("sonarr", scope, target_title)
         return 1
     monkeypatch.setattr(webhook, "discover_sonarr", fake_discover_sonarr)
-    monkeypatch.setattr(webhook, "discover_radarr", lambda *a, **k: 0)
+    monkeypatch.setattr(webhook, "discover_radarr", lambda *a, **k: calls.setdefault("radarr_called", True))
     monkeypatch.setattr(webhook, "enqueue_eligible", lambda session, source: calls.setdefault("enqueue", source) or 2)
     monkeypatch.setattr(webhook.controller, "wake", lambda: calls.setdefault("woke", True))
 
@@ -99,12 +99,16 @@ def test_process_webhook_discovers_and_enqueues(monkeypatch):
     assert calls["discover"] == ("sonarr", "all", "Breaking Bad")
     assert calls["enqueue"] == "sonarr"
     assert calls["woke"] is True
+    assert "radarr_called" not in calls
 
 
 def test_process_webhook_coalesces_pending(monkeypatch):
     monkeypatch.setattr(webhook, "build_clients", lambda: (_ for _ in ()).throw(AssertionError("should not run")))
+    monkeypatch.setattr(webhook, "SessionLocal", lambda: (_ for _ in ()).throw(AssertionError("should not run")))
+    seen = {}
     webhook._pending.add(("sonarr", "Breaking Bad"))
     try:
+        # build_clients/SessionLocal raise if reached → reaching here proves the early return
         webhook._process_webhook("sonarr", "Breaking Bad")
     finally:
         webhook._pending.discard(("sonarr", "Breaking Bad"))

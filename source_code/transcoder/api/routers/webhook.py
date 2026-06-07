@@ -63,6 +63,7 @@ def extract_title(source: str, payload: dict) -> str | None:
     return None
 
 
+# Intentional module-level state: in-flight set used to coalesce duplicate webhooks for the same (source, title).
 _pending: set[tuple[str, str]] = set()
 _pending_lock = threading.Lock()
 
