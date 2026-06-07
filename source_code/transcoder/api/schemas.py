@@ -102,11 +102,20 @@ class PruneOut(BaseModel):
     removed: int
 
 
+class SavingsOut(BaseModel):
+    bytes_saved: int        # original_bytes - output_bytes across completed jobs
+    original_bytes: int     # sum of original sizes (the "before")
+    output_bytes: int       # sum of transcoded sizes (the "after")
+    percent_saved: float    # bytes_saved / original_bytes * 100 (0 if no data)
+    files_done: int         # number of completed (state="done") jobs
+
+
 class StatusOut(BaseModel):
     worker_alive: bool
     current_job: JobOut | None = None
     queue_length: int
     stats: list[StatRow]
+    savings: SavingsOut
 
 
 class LogLine(BaseModel):

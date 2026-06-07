@@ -23,6 +23,13 @@ function makeFetch() {
           current_job: null,
           queue_length: 2,
           stats: [{ source: "sonarr", eligibility: "needs_transcode", count: 3 }],
+          savings: {
+            bytes_saved: 1363148800,
+            original_bytes: 5905580032,
+            output_bytes: 4542431232,
+            percent_saved: 23.08,
+            files_done: 142,
+          },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -77,6 +84,18 @@ test("renders worker online badge and queue length when worker_alive is true", a
   expect(await screen.findByText("2")).toBeInTheDocument();
 });
 
+test("renders the space saved stat in absolute and percent terms", async () => {
+  vi.stubGlobal("EventSource", FakeES);
+  vi.stubGlobal("fetch", makeFetch());
+
+  wrap(<Dashboard />);
+
+  // Absolute saved value (1363148800 bytes -> 1.3 GB) and the percentage.
+  expect(await screen.findByText("1.3 GB")).toBeInTheDocument();
+  expect(await screen.findByText("23.1%")).toBeInTheDocument();
+  expect(await screen.findByText("142")).toBeInTheDocument();
+});
+
 test("clicking the Scan now CTA triggers a POST to /api/run", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("EventSource", FakeES);
@@ -85,7 +104,9 @@ test("clicking the Scan now CTA triggers a POST to /api/run", async () => {
   wrap(<Dashboard />);
 
   await screen.findByText("online");
-  fireEvent.click(await screen.findByRole("button", { name: /scan now/i }));
+  // Both the hero CTA and the empty-queue hint read "Scan & Enqueue"; the CTA
+  // is first in the DOM.
+  fireEvent.click((await screen.findAllByRole("button", { name: /scan & enqueue/i }))[0]);
 
   await waitFor(() => {
     const hit = mockFetch.mock.calls.some((c) => {
