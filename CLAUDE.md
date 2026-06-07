@@ -63,6 +63,52 @@ Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 5
 
 **Windows batch shortcut:** `source_code/run.bat`
 
+## Testing
+
+Use TDD: write or update tests describing the desired behavior **before** writing the
+implementation, then code until green. Run the full suite before committing — don't
+declare a fix or feature done until tests are green.
+
+- **Backend (pytest):** `cd source_code && python -m pytest` (config in `pytest.ini`;
+  tests live in `source_code/tests/`, named `test_*.py`).
+- **Frontend (Vitest):** `cd source_code/web && npm test`.
+
+For bug fixes, first add a failing test that reproduces the defect, then fix it — this
+catches the *real* root cause rather than a surface symptom, and guards against the
+regression coming back.
+
+## Git Workflow
+
+Standard end-to-end flow when shipping a feature or fix:
+
+1. Verify the full test suite passes (backend + frontend, see ## Testing).
+2. Commit with a clean, conventional message.
+3. Merge to `master`.
+4. Push.
+5. Delete the feature branch.
+
+Never bypass hooks (`--no-verify`) or signing unless explicitly asked. The `/ship` skill
+codifies this flow.
+
+## Windows Notes
+
+This is primarily a Windows worker/server project; the shell is PowerShell.
+
+- **Avoid PowerShell here-strings for commit messages** — they have injected a stray `@`
+  into commit messages, forcing amend + force-push cleanups. Prefer a plain single-line
+  `-m` message, or write the message to a file and use `git commit -F <file>`.
+- Use Windows-safe quoting for `schtasks` and SQL commands run through the shell; the
+  shell has mangled these flags before. When in doubt, run them natively rather than
+  piping complex strings.
+
+## UI / Screenshots
+
+Before opening pages in a browser for screenshots, start a real local HTTP server and
+verify it responds first — do **not** use `file://` URLs or assume the FastAPI server is
+already running. For the web UI, build (`npm run build`) and serve via FastAPI, or run the
+Vite dev server (`npm run dev`). For UI tweaks, work from an annotated screenshot or the
+exact element/selector to avoid mis-identifying the target.
+
 ## Architecture
 
 This is a video transcoding pipeline that converts media to H.265/HEVC. It queries Sonarr/Radarr APIs to find non-H.265 files, downloads them via SFTP, transcodes with HandBrake CLI, and uploads the result back for automatic re-import.
