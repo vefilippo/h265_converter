@@ -96,7 +96,14 @@ test("renders the space saved stat in absolute and percent terms", async () => {
   expect(await screen.findByText("142")).toBeInTheDocument();
 });
 
-test("clicking the Scan now CTA triggers a POST to /api/run", async () => {
+function runUrls(mockFetch: ReturnType<typeof makeFetch>) {
+  return mockFetch.mock.calls
+    .filter((c) => c[1]?.method === "POST")
+    .map((c) => (typeof c[0] === "string" ? c[0] : c[0].toString()))
+    .filter((u) => u.includes("/api/run"));
+}
+
+test("default Scan & Enqueue posts /api/run without scope=all", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("EventSource", FakeES);
   vi.stubGlobal("fetch", mockFetch);
@@ -104,38 +111,35 @@ test("clicking the Scan now CTA triggers a POST to /api/run", async () => {
   wrap(<Dashboard />);
 
   await screen.findByText("online");
-  // Both the hero CTA and the empty-queue hint read "Scan & Enqueue"; the CTA
-  // is first in the DOM.
   fireEvent.click((await screen.findAllByRole("button", { name: /scan & enqueue/i }))[0]);
 
   await waitFor(() => {
-    const hit = mockFetch.mock.calls.some((c) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("/api/run") && c[1]?.method === "POST";
-    });
-    expect(hit).toBe(true);
+    const urls = runUrls(mockFetch);
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((u) => !u.includes("scope=all"))).toBe(true);
   });
 });
 
-test("clicking Enqueue eligible triggers a POST to /api/enqueue", async () => {
+test("checking 'Scan all libraries' confirms, then posts /api/run?scope=all", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("EventSource", FakeES);
   vi.stubGlobal("fetch", mockFetch);
 
   wrap(<Dashboard />);
 
-  // Wait for page to load
   await screen.findByText("online");
 
-  const enqueueBtn = await screen.findByRole("button", { name: /enqueue eligible/i });
-  fireEvent.click(enqueueBtn);
+  // Tick the full-scan checkbox, then click the CTA -> confirmation appears.
+  fireEvent.click(screen.getByRole("checkbox", { name: /full scan/i }));
+  fireEvent.click((await screen.findAllByRole("button", { name: /scan & enqueue/i }))[0]);
+
+  // No request yet — it waits for confirmation.
+  expect(runUrls(mockFetch)).toHaveLength(0);
+
+  // Confirm the full scan.
+  fireEvent.click(await screen.findByRole("button", { name: /start full scan/i }));
 
   await waitFor(() => {
-    const calls = mockFetch.mock.calls;
-    const enqueueCall = calls.find((c) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("/api/enqueue") && c[1]?.method === "POST";
-    });
-    expect(enqueueCall).toBeDefined();
+    expect(runUrls(mockFetch).some((u) => u.includes("scope=all"))).toBe(true);
   });
 });

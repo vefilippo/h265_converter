@@ -19,9 +19,6 @@ import { useActions, useJobs, useScanStatus, useStatus } from "../hooks/queries"
 import { formatBytes } from "../lib/formatBytes";
 import type { Status } from "../api/types";
 
-type ScanApp = "all" | "sonarr" | "radarr";
-type ScanScope = "all" | "new";
-
 const ELIGIBILITY_LABEL: Record<string, string> = {
   needs_transcode: "Needs transcode",
   already_h265: "Already H.265",
@@ -38,22 +35,27 @@ export default function Dashboard() {
 
   const liveJob = useEventStream("/api/stream");
 
-  const [scanOpen, setScanOpen] = useState(false);
-  const [scanApp, setScanApp] = useState<ScanApp>("all");
-  const [scanScope, setScanScope] = useState<ScanScope>("all");
+  // When checked, "Scan & Enqueue" re-scans the entire library (scope "all")
+  // instead of just recent history — gated behind a confirmation since it's slow.
+  const [scanAll, setScanAll] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const currentJob = liveJob ?? status?.current_job ?? null;
 
   const totalLibraryItems =
     status?.stats?.reduce((sum, row) => sum + row.count, 0) ?? 0;
 
-  function handleScanSubmit() {
-    actions.scan.mutate({ app: scanApp, scope: scanScope });
-    setScanOpen(false);
+  function handleScanEnqueue() {
+    if (scanAll) {
+      setConfirmOpen(true);
+    } else {
+      actions.run.mutate("new");
+    }
   }
 
-  function handleEnqueue() {
-    actions.enqueue.mutate({});
+  function confirmFullScan() {
+    setConfirmOpen(false);
+    actions.run.mutate("all");
   }
 
   if (statusLoading) {
@@ -70,30 +72,43 @@ export default function Dashboard() {
     <div className="space-y-6 p-6">
       <h1 className="font-display text-2xl text-fg">Dashboard</h1>
 
-      {/* Primary CTA: one click discovers new media across Sonarr & Radarr and
-          queues every eligible file (scan all → scope new → enqueue eligible). */}
+      {/* Primary CTA: one click discovers media across Sonarr & Radarr and
+          queues every eligible file. Default scans recent history (scope "new");
+          ticking "Scan all libraries" does a full re-scan (scope "all"). */}
       <Card>
-        <CardContent className="pt-6 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <div className="font-display text-lg text-fg">Scan &amp; Enqueue</div>
-            <div className="text-sm text-muted mt-0.5">
-              Find new media on Sonarr &amp; Radarr and queue all eligible files.
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <div className="font-display text-lg text-fg">Scan &amp; Enqueue</div>
+              <div className="text-sm text-muted mt-0.5">
+                Find new media on Sonarr &amp; Radarr and queue all eligible files.
+              </div>
             </div>
+            <Button
+              size="lg"
+              onClick={handleScanEnqueue}
+              disabled={actions.run.isPending || scanning}
+            >
+              {actions.run.isPending || scanning ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Scanning…
+                </>
+              ) : (
+                "Scan & Enqueue"
+              )}
+            </Button>
           </div>
-          <Button
-            size="lg"
-            onClick={() => actions.run.mutate()}
-            disabled={actions.run.isPending || scanning}
-          >
-            {actions.run.isPending || scanning ? (
-              <>
-                <Spinner size="sm" className="mr-2" />
-                Scanning…
-              </>
-            ) : (
-              "Scan & Enqueue"
-            )}
-          </Button>
+          <label className="flex w-fit items-center gap-2 text-sm text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={scanAll}
+              onChange={(e) => setScanAll(e.target.checked)}
+              disabled={actions.run.isPending || scanning}
+              className="h-4 w-4 rounded border-border accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-50"
+            />
+            Full scan
+          </label>
         </CardContent>
       </Card>
 
@@ -265,7 +280,7 @@ export default function Dashboard() {
               <p className="text-xs text-muted mt-1">
                 Use{" "}
                 <button
-                  onClick={() => actions.run.mutate()}
+                  onClick={() => actions.run.mutate("new")}
                   className="text-accent hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 rounded"
                 >
                   Scan &amp; Enqueue
@@ -277,105 +292,26 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Quick actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted mb-3 font-medium">Advanced controls</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              onClick={() => setScanOpen(true)}
-              disabled={actions.scan.isPending}
-              variant="outline"
-            >
-              {actions.scan.isPending && <Spinner size="sm" className="mr-2" />}
-              Scan
-            </Button>
-
-            {scanStatus && (
-              <span className="text-sm text-muted font-mono">
-                Scan: {scanStatus.state}
-              </span>
-            )}
-
-            <Button
-              onClick={handleEnqueue}
-              disabled={actions.enqueue.isPending}
-            >
-              {actions.enqueue.isPending && (
-                <Spinner size="sm" className="mr-2" />
-              )}
-              Enqueue eligible
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Scan dialog */}
+      {/* Full-scan confirmation: a full re-scan walks the entire library and
+          can take a while, so confirm before kicking it off. */}
       <Dialog
-        open={scanOpen}
-        onClose={() => setScanOpen(false)}
-        title="Start Scan"
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Scan all libraries?"
       >
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-fg mb-1">
-              App
-            </label>
-            <div className="flex gap-2">
-              {(["all", "sonarr", "radarr"] as ScanApp[]).map((app) => (
-                <button
-                  key={app}
-                  onClick={() => setScanApp(app)}
-                  aria-pressed={scanApp === app}
-                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
-                    scanApp === app
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-border text-muted hover:bg-surface"
-                  }`}
-                >
-                  {app}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-fg mb-1">
-              Scope
-            </label>
-            <div className="flex gap-2">
-              {(["all", "new"] as ScanScope[]).map((scope) => (
-                <button
-                  key={scope}
-                  onClick={() => setScanScope(scope)}
-                  aria-pressed={scanScope === scope}
-                  className={`px-3 py-1.5 rounded-md text-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
-                    scanScope === scope
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-border text-muted hover:bg-surface"
-                  }`}
-                >
-                  {scope}
-                </button>
-              ))}
-            </div>
-          </div>
-
+          <p className="text-sm text-muted">
+            This re-scans your <span className="text-fg font-medium">entire</span>{" "}
+            Sonarr &amp; Radarr libraries, not just recently added media. It can
+            take a while on large libraries, then queues every eligible file.
+          </p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setScanOpen(false)}>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleScanSubmit}
-              disabled={actions.scan.isPending}
-            >
-              {actions.scan.isPending && (
-                <Spinner size="sm" className="mr-2" />
-              )}
-              Start Scan
+            <Button onClick={confirmFullScan} disabled={actions.run.isPending}>
+              {actions.run.isPending && <Spinner size="sm" className="mr-2" />}
+              Start full scan
             </Button>
           </div>
         </div>

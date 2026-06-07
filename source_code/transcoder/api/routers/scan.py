@@ -46,17 +46,19 @@ def start_scan(body: ScanIn, background: BackgroundTasks):
     return {"status": "accepted"}
 
 
-def _run_full():
-    """One-click default flow (the Dashboard CTA): discover everything for new
-    items (app=all, scope=new) then enqueue all eligible items. The continuous
-    background worker drains the resulting queue automatically."""
+def _run_full(scope: str = "new"):
+    """One-click default flow (the Dashboard CTA): discover everything
+    (app=all) then enqueue all eligible items. scope="new" only walks the
+    Sonarr history since the last watermark (fast); scope="all" re-scans the
+    entire library (slow). The continuous background worker drains the
+    resulting queue automatically."""
     detail = {}
-    log.info("Run started (scan app=all, scope=new, then enqueue eligible)")
+    log.info("Run started (scan app=all, scope=%s, then enqueue eligible)", scope)
     try:
         clients = build_clients()
         session = SessionLocal()
         try:
-            detail["sonarr"] = discover_sonarr(session, clients["sonarr"], scope="new")
+            detail["sonarr"] = discover_sonarr(session, clients["sonarr"], scope=scope)
             detail["radarr"] = discover_radarr(session, clients["radarr"])
             detail["enqueued"] = enqueue_eligible(session)
         finally:
@@ -70,10 +72,10 @@ def _run_full():
 
 
 @router.post("/run", status_code=202)
-def start_run(background: BackgroundTasks):
+def start_run(background: BackgroundTasks, scope: str = "new"):
     if not state.scan_status.try_start():
         raise HTTPException(status_code=409, detail="a scan is already running")
-    background.add_task(_run_full)
+    background.add_task(_run_full, "all" if scope == "all" else "new")
     return {"status": "accepted"}
 
 

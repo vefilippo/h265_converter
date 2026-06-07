@@ -68,7 +68,12 @@ export function useActions() {
   };
   return {
     scan: useMutation({ mutationFn: (b: object) => api.post("/api/scan", b), onSuccess: invalidate }),
-    run: useMutation({ mutationFn: () => api.post("/api/run"), onSuccess: invalidate }),
+    run: useMutation({
+      // scope "new" walks recent history (fast); "all" re-scans the whole library.
+      mutationFn: (scope: "new" | "all" = "new") =>
+        api.post(`/api/run${scope === "all" ? "?scope=all" : ""}`),
+      onSuccess: invalidate,
+    }),
     enqueue: useMutation({ mutationFn: (b: object) => api.post("/api/enqueue", b), onSuccess: invalidate }),
     enqueueItem: useMutation({ mutationFn: (id: number) => api.post(`/api/library/${id}/enqueue`), onSuccess: invalidate }),
     cancel: useMutation({ mutationFn: (id: number) => api.post(`/api/jobs/${id}/cancel`), onSuccess: invalidate }),
