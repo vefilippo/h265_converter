@@ -212,10 +212,10 @@ export default function Settings() {
     setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
     setWebhookUser(data.webhook_username || '');
     setWebhookPass(data.webhook_password_set ? REDACTED : '');
-    setWebhookDirty(false);
     setSchedDirty(false);
     setConnDirty(false);
     setTransDirty(false);
+    setWebhookDirty(false);
   }, [data]);
 
   const onSuccess = () => qc.invalidateQueries({ queryKey: ['settings'] });
@@ -526,8 +526,8 @@ export default function Settings() {
           <CardContent className="space-y-4 pt-5">
             <p className="text-sm text-muted">
               Add a <span className="font-medium text-fg">Webhook</span> connection in Sonarr and
-              Radarr (Settings → Connect) pointing at the URLs below, triggered <span className="font-medium text-fg">On Import</span> and
-              <span className="font-medium text-fg"> On Import Upgrade</span>. Use the username and
+              Radarr (Settings → Connect) pointing at the URLs below, triggered <span className="font-medium text-fg">On Import</span>{' '}and{' '}
+              <span className="font-medium text-fg">On Import Upgrade</span>. Use the username and
               password below as the connection's Basic-auth credentials. The host must be reachable
               from the Sonarr/Radarr machine.
             </p>

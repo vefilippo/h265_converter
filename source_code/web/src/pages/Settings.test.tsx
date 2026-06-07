@@ -60,3 +60,29 @@ test("saving webhook section sends username", async () => {
   await waitFor(() => expect(captured.body).toBeTruthy());
   expect(JSON.parse(captured.body!)).toMatchObject({ webhook_username: "hookuser" });
 });
+
+test("does not send webhook password when untouched", async () => {
+  const SETTINGS_WITH_PW_SET = { ...SETTINGS, webhook_password_set: true };
+  const captured: { body?: string } = {};
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/settings") && (!init || init.method === "GET")) {
+      return new Response(JSON.stringify(SETTINGS_WITH_PW_SET), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/api/settings") && init?.method === "PUT") {
+      captured.body = init.body as string;
+      return new Response(JSON.stringify({ updated: ["webhook_username"] }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  }));
+  renderPage();
+  const userInput = await screen.findByLabelText(/webhook username/i);
+  fireEvent.change(userInput, { target: { value: "hookuser" } });
+  fireEvent.click(screen.getByRole("button", { name: /save webhook settings/i }));
+  await waitFor(() => expect(captured.body).toBeTruthy());
+  expect(JSON.parse(captured.body!)).not.toHaveProperty("webhook_password");
+});
