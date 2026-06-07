@@ -18,8 +18,13 @@ export interface Job {
 export interface JobPage { total: number; items: Job[]; }
 export interface JobLog { log: string; }
 export interface Exclusion { id: number; source: string; key: string; reason: string; matched: boolean; }
+export interface Savings {
+  bytes_saved: number; original_bytes: number; output_bytes: number;
+  percent_saved: number; files_done: number;
+}
 export interface Status {
-  worker_alive: boolean; current_job: Job | null; queue_length: number; stats: StatRow[];
+  worker_alive: boolean; current_job: Job | null; queue_length: number;
+  stats: StatRow[]; savings: Savings;
 }
 export interface ScanStatus {
   state: string; detail: Record<string, unknown>;

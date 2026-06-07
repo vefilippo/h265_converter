@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from transcoder.api.deps import get_session
 from transcoder.api import state
-from transcoder.api.schemas import JobOut, StatRow, StatusOut
+from transcoder.api.schemas import JobOut, SavingsOut, StatRow, StatusOut
 from transcoder.models import Job, MediaItem
 
 router = APIRouter(prefix="/api")
@@ -18,6 +18,30 @@ def _stats(session: Session) -> list[StatRow]:
     rows = (session.query(MediaItem.source, MediaItem.eligibility, func.count())
             .group_by(MediaItem.source, MediaItem.eligibility).all())
     return [StatRow(source=s, eligibility=e, count=c) for s, e, c in rows]
+
+
+def _savings(session: Session) -> SavingsOut:
+    # Only completed jobs represent reclaimed disk. `skipped_larger` jobs grew
+    # and were excluded, so counting them would understate the real savings.
+    # Aggregate raw bytes and divide once — averaging per-job reduction_pct
+    # would wrongly weight a small episode the same as a large 4K movie.
+    original, output, files_done = (
+        session.query(
+            func.coalesce(func.sum(Job.original_size), 0),
+            func.coalesce(func.sum(Job.output_size), 0),
+            func.count(),
+        )
+        .filter(Job.state == "done", Job.original_size.isnot(None))
+        .one()
+    )
+    saved = original - output
+    return SavingsOut(
+        bytes_saved=saved,
+        original_bytes=original,
+        output_bytes=output,
+        percent_saved=(saved / original * 100) if original else 0.0,
+        files_done=files_done,
+    )
 
 
 def _current_job_out(session: Session) -> JobOut | None:
@@ -40,6 +64,7 @@ def status(session: Session = Depends(get_session)):
         current_job=_current_job_out(session),
         queue_length=queue_length,
         stats=_stats(session),
+        savings=_savings(session),
     )
 
 

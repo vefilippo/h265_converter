@@ -52,7 +52,7 @@ cd source_code/web && npm install && npm run dev     # UI on :5173, proxies /api
 cd source_code/web && npm run build                  # -> web/dist
 cd source_code && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity). Frontend tests: `cd source_code/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity). Frontend tests: `cd source_code/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 

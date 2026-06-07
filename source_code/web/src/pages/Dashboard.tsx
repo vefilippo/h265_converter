@@ -16,6 +16,8 @@ import {
 } from "../components/ui/table";
 import { useEventStream } from "../hooks/useEventStream";
 import { useActions, useJobs, useScanStatus, useStatus } from "../hooks/queries";
+import { formatBytes } from "../lib/formatBytes";
+import type { Status } from "../api/types";
 
 type ScanApp = "all" | "sonarr" | "radarr";
 type ScanScope = "all" | "new";
@@ -94,6 +96,10 @@ export default function Dashboard() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Space saved — the headline "reward" metric: how much disk transcoding
+          has reclaimed, in absolute bytes and as a percentage. */}
+      <SpaceSavedCard savings={status?.savings} />
 
       {/* Summary cards row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -375,5 +381,78 @@ export default function Dashboard() {
         </div>
       </Dialog>
     </div>
+  );
+}
+
+function SpaceSavedCard({ savings }: { savings?: Status["savings"] }) {
+  const filesDone = savings?.files_done ?? 0;
+
+  if (!savings || filesDone === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Space Saved</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center py-4 text-center">
+            <p className="text-sm text-muted font-medium">No transcodes completed yet</p>
+            <p className="text-xs text-muted mt-1">
+              Savings will appear here once the first file finishes transcoding.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Fill = the reclaimed portion of the original size; the remainder is the new
+  // (transcoded) size. Clamped so a rare negative-on-aggregate never breaks the bar.
+  const pct = Math.min(100, Math.max(0, savings.percent_saved));
+  const summary =
+    `Saved ${formatBytes(savings.bytes_saved)} ` +
+    `(${savings.percent_saved.toFixed(1)}%) across ${filesDone} ` +
+    `${filesDone === 1 ? "file" : "files"}; new size ${formatBytes(savings.output_bytes)}.`;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Space Saved</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="font-mono text-4xl text-accent tabular-nums">
+            {formatBytes(savings.bytes_saved)}
+          </span>
+          <span className="text-sm text-muted">
+            <span className="font-mono tabular-nums">{savings.percent_saved.toFixed(1)}%</span>
+            {" smaller · "}
+            <span className="font-mono tabular-nums">{filesDone}</span>
+            {filesDone === 1 ? " file" : " files"}
+          </span>
+        </div>
+
+        <div className="space-y-1.5">
+          <div
+            role="img"
+            aria-label={summary}
+            className="h-2.5 rounded-full bg-elevated overflow-hidden"
+          >
+            <div
+              className="h-full bg-accent rounded-full transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-muted">
+            <span>saved</span>
+            <span>
+              new size{" "}
+              <span className="font-mono tabular-nums text-fg">
+                {formatBytes(savings.output_bytes)}
+              </span>
+            </span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
