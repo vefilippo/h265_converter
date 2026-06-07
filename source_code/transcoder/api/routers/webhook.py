@@ -16,6 +16,8 @@ _UNAUTH = {"WWW-Authenticate": "Basic"}
 
 def _load_creds() -> tuple[str | None, str | None]:
     """Read the configured webhook username + bcrypt password hash."""
+    # Per-request DB read is intentional: rotated credentials take effect immediately
+    # without a restart (low-frequency endpoint; mirrors the auth.py login pattern).
     with SessionLocal() as db:
         return (
             get_setting(db, "webhook_username"),
@@ -36,13 +38,14 @@ def verify_webhook_auth(request: Request) -> None:
     username, _, password = decoded.partition(":")
 
     stored_user, stored_hash = _load_creds()
+    # Must precede hmac.compare_digest / bcrypt.checkpw: both require non-None operands.
     if not stored_user or not stored_hash:
-        raise HTTPException(401, "webhook auth not configured", headers=_UNAUTH)
+        raise HTTPException(401, "authentication required", headers=_UNAUTH)
 
     user_ok = hmac.compare_digest(username, stored_user)
     pass_ok = bcrypt.checkpw(password.encode(), stored_hash.encode())
     if not (user_ok and pass_ok):
-        raise HTTPException(401, "invalid credentials", headers=_UNAUTH)
+        raise HTTPException(401, "authentication required", headers=_UNAUTH)
 
 
 def extract_title(source: str, payload: dict) -> str | None:

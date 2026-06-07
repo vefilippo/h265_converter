@@ -1,4 +1,16 @@
+import base64
+
+import bcrypt
+import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
+
+import transcoder.api.routers.webhook as webhook
 from transcoder.api.routers.webhook import extract_title
+
+# Computed once at module load; shared by all _seed_creds callers.
+_HOOKPASS = "hookpass"
+_HOOKPASS_HASH = bcrypt.hashpw(_HOOKPASS.encode(), bcrypt.gensalt()).decode()
 
 
 def test_extract_title_sonarr():
@@ -17,15 +29,6 @@ def test_extract_title_missing_returns_none():
     assert extract_title("sonarr", {"series": None}) is None
 
 
-import base64
-import bcrypt
-import pytest
-from fastapi import HTTPException
-from starlette.requests import Request
-
-import transcoder.api.routers.webhook as webhook
-
-
 def _make_request(auth_header: str | None) -> Request:
     headers = []
     if auth_header is not None:
@@ -40,7 +43,8 @@ def _basic(user: str, pw: str) -> str:
 
 
 def _seed_creds(monkeypatch, user="hookuser", pw="hookpass"):
-    pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    # Use the pre-computed hash when pw matches the default; re-hash only for overrides.
+    pw_hash = _HOOKPASS_HASH if pw == _HOOKPASS else bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
     store = {"webhook_username": user, "webhook_password_hash": pw_hash}
     monkeypatch.setattr(webhook, "_load_creds", lambda: (store["webhook_username"], store["webhook_password_hash"]))
 
@@ -55,6 +59,7 @@ def test_verify_auth_rejects_wrong_password(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         webhook.verify_webhook_auth(_make_request(_basic("hookuser", "WRONG")))
     assert exc.value.status_code == 401
+    assert exc.value.headers.get("WWW-Authenticate") == "Basic"
 
 
 def test_verify_auth_rejects_missing_header(monkeypatch):
@@ -70,3 +75,4 @@ def test_verify_auth_rejects_when_not_configured(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         webhook.verify_webhook_auth(_make_request(_basic("hookuser", "hookpass")))
     assert exc.value.status_code == 401
+    assert exc.value.headers.get("WWW-Authenticate") == "Basic"
