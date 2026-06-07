@@ -76,3 +76,35 @@ def test_verify_auth_rejects_when_not_configured(monkeypatch):
         webhook.verify_webhook_auth(_make_request(_basic("hookuser", "hookpass")))
     assert exc.value.status_code == 401
     assert exc.value.headers.get("WWW-Authenticate") == "Basic"
+
+
+def test_process_webhook_discovers_and_enqueues(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(webhook, "build_clients", lambda: {"sonarr": "S", "radarr": "R"})
+
+    class _FakeSession:
+        def close(self): pass
+    monkeypatch.setattr(webhook, "SessionLocal", lambda: _FakeSession())
+
+    def fake_discover_sonarr(session, client, scope, target_title):
+        calls["discover"] = ("sonarr", scope, target_title)
+        return 1
+    monkeypatch.setattr(webhook, "discover_sonarr", fake_discover_sonarr)
+    monkeypatch.setattr(webhook, "discover_radarr", lambda *a, **k: 0)
+    monkeypatch.setattr(webhook, "enqueue_eligible", lambda session, source: calls.setdefault("enqueue", source) or 2)
+    monkeypatch.setattr(webhook.controller, "wake", lambda: calls.setdefault("woke", True))
+
+    webhook._process_webhook("sonarr", "Breaking Bad")
+
+    assert calls["discover"] == ("sonarr", "all", "Breaking Bad")
+    assert calls["enqueue"] == "sonarr"
+    assert calls["woke"] is True
+
+
+def test_process_webhook_coalesces_pending(monkeypatch):
+    monkeypatch.setattr(webhook, "build_clients", lambda: (_ for _ in ()).throw(AssertionError("should not run")))
+    webhook._pending.add(("sonarr", "Breaking Bad"))
+    try:
+        webhook._process_webhook("sonarr", "Breaking Bad")
+    finally:
+        webhook._pending.discard(("sonarr", "Breaking Bad"))

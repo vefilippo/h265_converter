@@ -2,11 +2,15 @@ import base64
 import binascii
 import hmac
 import logging
+import threading
 
 import bcrypt
 from fastapi import HTTPException, Request
 
+from transcoder.api.state import build_clients, controller
 from transcoder.db import SessionLocal
+from transcoder.engine.discovery import discover_sonarr, discover_radarr
+from transcoder.engine.queue import enqueue_eligible
 from transcoder.repo import get_setting
 
 log = logging.getLogger("transcoder")
@@ -57,3 +61,39 @@ def extract_title(source: str, payload: dict) -> str | None:
     if source == "radarr":
         return (payload.get("movie") or {}).get("title")
     return None
+
+
+_pending: set[tuple[str, str]] = set()
+_pending_lock = threading.Lock()
+
+
+def _process_webhook(source: str, title: str) -> None:
+    """Targeted discover + enqueue for a single title, then wake the worker.
+
+    A burst of webhooks for the same (source, title) is coalesced: while one is
+    in flight, duplicates return immediately (the in-flight discover re-scans the
+    whole series/movie anyway)."""
+    key = (source, title)
+    with _pending_lock:
+        if key in _pending:
+            log.info("Webhook coalesced: (%s) %s already pending", source, title)
+            return
+        _pending.add(key)
+    try:
+        clients = build_clients()
+        session = SessionLocal()
+        try:
+            if source == "sonarr":
+                discover_sonarr(session, clients["sonarr"], scope="all", target_title=title)
+            else:
+                discover_radarr(session, clients["radarr"], target_movie=title)
+            created = enqueue_eligible(session, source=source)
+        finally:
+            session.close()
+        controller.wake()
+        log.info("Webhook processed: source=%s title=%s enqueued=%d", source, title, created)
+    except Exception:  # noqa: BLE001
+        log.exception("Webhook processing failed: source=%s title=%s", source, title)
+    finally:
+        with _pending_lock:
+            _pending.discard(key)
