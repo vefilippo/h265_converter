@@ -40,8 +40,13 @@ Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
 `POST /api/scan`, `GET /api/scan/status`, `POST /api/enqueue`, `GET /api/jobs`,
 `POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`, `GET /api/jobs/{id}/logs`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE), `GET /api/logs`,
-`POST /api/library/{id}/enqueue`. A continuous background worker drains the job
-queue automatically while the server runs.
+`POST /api/library/{id}/enqueue`,
+`POST /api/webhook/{source}` (`source` = `sonarr`|`radarr`; open route that
+self-authenticates via HTTP Basic against `webhook_username`/`webhook_password_hash`
+settings — Sonarr/Radarr call it on import to trigger a targeted discover +
+enqueue of just that title; non-`Download` events are ack'd and ignored). A
+continuous background worker drains the job queue automatically while the server
+runs.
 
 **Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `source_code/web/`, served by FastAPI behind a single-password login. Requires `APP_PASSWORD` + `SECRET_KEY` in `.env`.
 ```bash
@@ -52,7 +57,7 @@ cd source_code/web && npm install && npm run dev     # UI on :5173, proxies /api
 cd source_code/web && npm run build                  # -> web/dist
 cd source_code && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity). Frontend tests: `cd source_code/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, and a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use). Frontend tests: `cd source_code/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 
