@@ -411,7 +411,7 @@ function SpaceSavedCard({ savings }: { savings?: Status["savings"] }) {
   const summary =
     `Saved ${formatBytes(savings.bytes_saved)} ` +
     `(${savings.percent_saved.toFixed(1)}%) across ${filesDone} ` +
-    `${filesDone === 1 ? "file" : "files"}; new size ${formatBytes(savings.output_bytes)}.`;
+    `${filesDone === 1 ? "file" : "files"}; original size ${formatBytes(savings.original_bytes)}.`;
 
   return (
     <Card>
@@ -445,9 +445,9 @@ function SpaceSavedCard({ savings }: { savings?: Status["savings"] }) {
           <div className="flex justify-between text-xs text-muted">
             <span>saved</span>
             <span>
-              new size{" "}
+              original{" "}
               <span className="font-mono tabular-nums text-fg">
-                {formatBytes(savings.output_bytes)}
+                {formatBytes(savings.original_bytes)}
               </span>
             </span>
           </div>
