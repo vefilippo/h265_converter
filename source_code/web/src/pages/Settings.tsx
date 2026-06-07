@@ -186,6 +186,13 @@ export default function Settings() {
   const [secSaved, setSecSaved] = useState(false);
   const [secError, setSecError] = useState<string | null>(null);
 
+  // Webhooks
+  const [webhookUser, setWebhookUser] = useState('');
+  const [webhookPass, setWebhookPass] = useState(REDACTED);
+  const [webhookSaved, setWebhookSaved] = useState(false);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [webhookDirty, setWebhookDirty] = useState(false);
+
   // Seed from server — useEffect to avoid setState-during-render anti-pattern
   useEffect(() => {
     if (!data) return;
@@ -203,6 +210,9 @@ export default function Settings() {
     setHbCli(data.handbrake_cli);
     setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
     setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
+    setWebhookUser(data.webhook_username || '');
+    setWebhookPass(data.webhook_password_set ? REDACTED : '');
+    setWebhookDirty(false);
     setSchedDirty(false);
     setConnDirty(false);
     setTransDirty(false);
@@ -213,6 +223,7 @@ export default function Settings() {
   const connMut = useMutation({ mutationFn: updateSettings, onSuccess });
   const transMut = useMutation({ mutationFn: updateSettings, onSuccess });
   const secMut = useMutation({ mutationFn: updateSettings, onSuccess });
+  const webhookMut = useMutation({ mutationFn: updateSettings, onSuccess });
 
   async function save(
     payload: SettingsUpdate,
@@ -235,6 +246,7 @@ export default function Settings() {
   const cronDescription = cron ? cronDesc(cron) : '';
   const cronIsValid = !cron || cronValid(cron);
   const pwMismatch = !!(newPw && confirmPw && newPw !== confirmPw);
+  const webhookBase = `${window.location.origin}/api/webhook`;
 
   if (isLoading) {
     return (
@@ -499,6 +511,62 @@ export default function Settings() {
                 {secMut.isPending ? 'Saving…' : 'Save'}
               </Button>
               <StatusMessage saving={secMut.isPending} saved={secSaved} error={secError} />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Webhooks ── */}
+      <section aria-labelledby="webhook-heading" className="mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
+            <h2 id="webhook-heading" className="font-display text-lg text-fg">Webhooks</h2>
+            {webhookDirty && <DirtyDot />}
+          </CardHeader>
+          <CardContent className="space-y-4 pt-5">
+            <p className="text-sm text-muted">
+              Add a <span className="font-medium text-fg">Webhook</span> connection in Sonarr and
+              Radarr (Settings → Connect) pointing at the URLs below, triggered <span className="font-medium text-fg">On Import</span> and
+              <span className="font-medium text-fg"> On Import Upgrade</span>. Use the username and
+              password below as the connection's Basic-auth credentials. The host must be reachable
+              from the Sonarr/Radarr machine.
+            </p>
+
+            <div className="space-y-1 text-sm">
+              <div className="text-xs font-medium text-muted">Sonarr URL</div>
+              <code className="block break-all rounded bg-elevated px-2 py-1 font-mono text-xs text-fg">
+                {webhookBase}/sonarr
+              </code>
+              <div className="pt-2 text-xs font-medium text-muted">Radarr URL</div>
+              <code className="block break-all rounded bg-elevated px-2 py-1 font-mono text-xs text-fg">
+                {webhookBase}/radarr
+              </code>
+            </div>
+
+            <Field htmlFor="webhook-user" label="Webhook username">
+              <Input id="webhook-user" value={webhookUser}
+                onChange={e => { setWebhookUser(e.target.value); setWebhookDirty(true); }} />
+            </Field>
+            <Field htmlFor="webhook-pass" label="Webhook password">
+              <MaskedInput id="webhook-pass" fieldLabel="Webhook password"
+                value={webhookPass} onChange={v => { setWebhookPass(v); setWebhookDirty(true); }} />
+            </Field>
+
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <Button size="sm"
+                onClick={() => save(
+                  {
+                    webhook_username: webhookUser,
+                    ...(webhookPass !== REDACTED ? { webhook_password: webhookPass } : {}),
+                  },
+                  webhookMut.mutateAsync, setWebhookSaved, setWebhookError, setWebhookDirty,
+                )}
+                disabled={webhookMut.isPending}
+                aria-busy={webhookMut.isPending}
+                aria-label="Save Webhook settings">
+                {webhookMut.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <StatusMessage saving={webhookMut.isPending} saved={webhookSaved} error={webhookError} />
             </div>
           </CardContent>
         </Card>

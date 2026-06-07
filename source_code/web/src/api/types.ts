@@ -48,6 +48,8 @@ export interface Settings {
   handbrake_preset_1080: string;
   handbrake_preset_4k: string;
   scheduler_next_run: string | null;
+  webhook_username: string;
+  webhook_password_set: boolean;
 }
 
 export interface SettingsUpdate {
@@ -66,4 +68,6 @@ export interface SettingsUpdate {
   handbrake_preset_4k?: string;
   current_password?: string;
   new_password?: string;
+  webhook_username?: string;
+  webhook_password?: string;
 }
