@@ -51,6 +51,9 @@ htmlcov/
 .ruff_cache/
 .dmypy.json
 
+# Personal scratch / planning notes (not for sharing)
+TODO.local.md
+
 # IDE / editor
 .idea/
 .vscode/
