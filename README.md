@@ -9,6 +9,7 @@ Automated H.265/HEVC transcoding pipeline for your media library. Integrates wit
 - **Web UI** — Dashboard with live progress (SSE), Library (filter / enqueue / exclude), Jobs (cancel / retry), live Logs, and Settings.
 - **Runtime configuration** — edit Sonarr/Radarr URLs + API keys, SFTP credentials, and the HandBrake CLI path/preset from the Settings page; no restart required.
 - **Scheduler** — cron-based auto-runs (APScheduler) with a run-at-startup toggle.
+- **Webhook triggers** — Sonarr/Radarr call the app the moment a file is imported, so it's discovered and queued for transcoding instantly instead of waiting for the next scan.
 - **Authentication** — single-password login, bcrypt-hashed and stored in the DB after first login, with a session cookie.
 - **Windows tray app** — green/grey health dot, start/stop the server, and toast notifications on job done / failed / queue cleared.
 - **Logging** — daily-rotating files in `log/` with a 30-day archive and a consistent format across all components.
@@ -57,6 +58,19 @@ All config lives in `source_code/.env` (gitignored). Copy `source_code/.env.exam
 | `PRESET_4K` | HandBrake preset name for 4K/2160p sources |
 
 > The app password is bcrypt-hashed and stored in the DB after first login; raw credentials stay in `.env` only.
+
+## Webhooks (instant triggering)
+
+By default new media is found by a scan (manual, scheduled, or the watermark "new" walk). To transcode the moment something is imported, point Sonarr/Radarr at the app's webhook:
+
+1. In the web UI, open **Settings → Webhooks**, set a username and password, and copy the two URLs shown (`http://<this-host>:8765/api/webhook/sonarr` and `…/radarr`).
+2. In Sonarr/Radarr, go to **Settings → Connect → + → Webhook**:
+   - **URL** — the matching URL from step 1.
+   - **Method** — `POST`.
+   - **Username / Password** — the credentials from step 1 (sent as HTTP Basic auth).
+   - **Triggers** — enable **On Import** and **On Import Upgrade**.
+
+On import the app authenticates the call, then runs a *targeted* discover + enqueue for just that series/movie and wakes the worker. Other events (Test, Grab, Rename) are acknowledged and ignored. Re-imported H.265 files are not re-queued, so there's no feedback loop. The host must be reachable from the Sonarr/Radarr machine.
 
 ## Scripts
 
