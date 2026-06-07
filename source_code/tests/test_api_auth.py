@@ -7,7 +7,24 @@ from transcoder.api.auth import router as auth_router, require_auth
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # auth.login reads SessionLocal directly; without isolation it hits the real
+    # transcoder.db (and its app_password_hash), so the env-password fallback
+    # never runs. Point it at an empty in-memory DB so login uses APP_PASSWORD.
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import StaticPool
+    from sqlalchemy.orm import sessionmaker
+    from transcoder.db import Base
+    import transcoder.models  # noqa: F401
+    import transcoder.api.auth as auth_module
+
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(auth_module, "SessionLocal",
+                        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False))
+
     app = FastAPI()
     app.add_middleware(SessionMiddleware, secret_key="test-secret-key")
     app.include_router(auth_router)

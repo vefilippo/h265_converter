@@ -41,6 +41,13 @@ def api(monkeypatch):
     monkeypatch.setattr(app_module, "reconcile_stale_jobs", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "init_logging", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "backup_db", lambda *a, **k: None)
+    # auth.py imports SessionLocal directly, so patching app_module's reference
+    # above isn't enough — without this the login endpoint reads the real
+    # transcoder.db (and its app_password_hash), breaking the fixture's
+    # default login on any machine that has a real DB. Point it at the
+    # in-memory DB so login falls back to the env APP_PASSWORD ("test-pass").
+    import transcoder.api.auth as auth_module
+    monkeypatch.setattr(auth_module, "SessionLocal", Session)
 
     app = create_app(start_worker=False)
 
