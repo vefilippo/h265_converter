@@ -1,16 +1,14 @@
 import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useExclusions, useActions } from "../hooks/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import { DataTable } from "../components/ui/data-table";
 import { Input } from "../components/ui/input";
 import { Spinner } from "../components/ui/spinner";
-import { Table, THead, TBody, TR, TH, TD } from "../components/ui/table";
 import type { Exclusion } from "../api/types";
-
-type SortCol = "source" | "key" | "reason" | "status";
-type SortDir = "asc" | "desc";
 
 function statusRank(ex: Exclusion): number {
   return ex.matched ? 0 : 1;
@@ -24,12 +22,11 @@ export default function Exclusions() {
   const [source, setSource] = useState<"sonarr" | "radarr">("sonarr");
   const [key, setKey] = useState("");
 
-  // List filter/sort controls (client-side over the fetched list).
+  // List filter controls (client-side over the fetched list). Sorting is handled
+  // by the DataTable; the filtered rows feed it.
   const [filterSource, setFilterSource] = useState<"all" | "sonarr" | "radarr">("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "matched" | "orphaned">("all");
   const [filterKey, setFilterKey] = useState("");
-  const [sortCol, setSortCol] = useState<SortCol>("source");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const addError = actions.addExclusion.error as Error | null;
   const orphanCount = (exclusions ?? []).filter((e) => !e.matched).length;
@@ -41,29 +38,66 @@ export default function Exclusions() {
       rows = rows.filter((e) => (filterStatus === "matched" ? e.matched : !e.matched));
     const needle = filterKey.trim().toLowerCase();
     if (needle) rows = rows.filter((e) => e.key.toLowerCase().includes(needle));
+    return rows;
+  }, [exclusions, filterSource, filterStatus, filterKey]);
 
-    const dir = sortDir === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      let cmp = 0;
-      if (sortCol === "status") cmp = statusRank(a) - statusRank(b);
-      else cmp = String(a[sortCol]).localeCompare(String(b[sortCol]));
-      return cmp !== 0 ? cmp * dir : (a.id - b.id);
-    });
-  }, [exclusions, filterSource, filterStatus, filterKey, sortCol, sortDir]);
-
-  function toggleSort(col: SortCol) {
-    if (sortCol === col) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortCol(col);
-      setSortDir("asc");
-    }
-  }
-
-  function sortArrow(col: SortCol): string {
-    if (sortCol !== col) return "";
-    return sortDir === "asc" ? " ▲" : " ▼";
-  }
+  const columns = useMemo<ColumnDef<Exclusion, unknown>[]>(
+    () => [
+      {
+        id: "source",
+        header: "Source",
+        accessorKey: "source",
+        cell: ({ row }) => (
+          <Badge variant={row.original.source === "sonarr" ? "accent" : "queued"}>
+            {row.original.source}
+          </Badge>
+        ),
+      },
+      {
+        id: "key",
+        header: "Key",
+        accessorKey: "key",
+        meta: { tdClassName: "font-mono text-xs" },
+        cell: ({ row }) => row.original.key,
+      },
+      {
+        id: "reason",
+        header: "Reason",
+        accessorKey: "reason",
+        cell: ({ row }) => (
+          <Badge variant={row.original.reason === "output_larger" ? "skipped" : "neutral"}>
+            {row.original.reason}
+          </Badge>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (ex) => statusRank(ex),
+        cell: ({ row }) => (
+          <Badge variant={row.original.matched ? "done" : "skipped"}>
+            {row.original.matched ? "in library" : "orphaned"}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => actions.delExclusion.mutate(row.original.id)}
+            disabled={actions.delExclusion.isPending}
+          >
+            Remove
+          </Button>
+        ),
+      },
+    ],
+    [actions],
+  );
 
   function handleAdd() {
     if (!key.trim()) return;
@@ -186,65 +220,12 @@ export default function Exclusions() {
           ) : visible.length === 0 ? (
             <p className="text-muted text-sm p-6 text-center">No exclusions match the filters</p>
           ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>
-                    <button className="hover:text-fg" onClick={() => toggleSort("source")}>
-                      Source{sortArrow("source")}
-                    </button>
-                  </TH>
-                  <TH>
-                    <button className="hover:text-fg" onClick={() => toggleSort("key")}>
-                      Key{sortArrow("key")}
-                    </button>
-                  </TH>
-                  <TH>
-                    <button className="hover:text-fg" onClick={() => toggleSort("reason")}>
-                      Reason{sortArrow("reason")}
-                    </button>
-                  </TH>
-                  <TH>
-                    <button className="hover:text-fg" onClick={() => toggleSort("status")}>
-                      Status{sortArrow("status")}
-                    </button>
-                  </TH>
-                  <TH>Actions</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {visible.map((ex) => (
-                  <TR key={ex.id}>
-                    <TD>
-                      <Badge variant={ex.source === "sonarr" ? "accent" : "queued"}>
-                        {ex.source}
-                      </Badge>
-                    </TD>
-                    <TD className="font-mono text-xs">{ex.key}</TD>
-                    <TD>
-                      <Badge variant={ex.reason === "output_larger" ? "skipped" : "neutral"}>
-                        {ex.reason}
-                      </Badge>
-                    </TD>
-                    <TD>
-                      <Badge variant={ex.matched ? "done" : "skipped"}>
-                        {ex.matched ? "in library" : "orphaned"}
-                      </Badge>
-                    </TD>
-                    <TD>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => actions.delExclusion.mutate(ex.id)}
-                        disabled={actions.delExclusion.isPending}
-                      >
-                        Remove
-                      </Button>
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
+            <DataTable
+              columns={columns}
+              data={visible}
+              getRowId={(ex) => String(ex.id)}
+              initialSorting={[{ id: "source", desc: false }]}
+            />
           )}
         </CardContent>
       </Card>
