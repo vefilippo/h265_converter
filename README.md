@@ -6,7 +6,7 @@ Automated H.265/HEVC transcoding pipeline for your media library. Integrates wit
 
 ## Features
 
-- **Web UI** — Dashboard with live progress (SSE), Library (filter / enqueue / exclude), Jobs (cancel / retry), live Logs, and Settings.
+- **Web UI** — Dashboard with live progress (SSE), Library (filter / enqueue / exclude), Jobs (cancel / retry), live Logs, and Settings. The Library, Jobs, and Exclusions tables are sortable (click a column header); Jobs defaults to most-recent-first.
 - **Runtime configuration** — edit Sonarr/Radarr URLs + API keys, SFTP credentials, and the HandBrake CLI path/preset from the Settings page; no restart required.
 - **Scheduler** — cron-based auto-runs (APScheduler) with a run-at-startup toggle.
 - **Webhook triggers** — Sonarr/Radarr call the app the moment a file is imported, so it's discovered and queued for transcoding instantly instead of waiting for the next scan.
@@ -124,7 +124,7 @@ Sonarr/Radarr API
 ```
 
 - **Backend** — Python 3.11+, FastAPI, SQLAlchemy, APScheduler, Paramiko (SFTP), pydantic-settings.
-- **Frontend** — React 18, Vite, Tailwind CSS, TanStack Query 5, cronstrue.
+- **Frontend** — React 18, Vite, Tailwind CSS, TanStack Query 5, TanStack Table 8, cronstrue.
 - **Windows** — pystray, winotify, Pillow.
 - **State** — SQLite (WAL mode); `media_item`, `job`, `exclusion`, and `setting` tables.
 

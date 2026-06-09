@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useActions, useJobs, useJobLogs } from "../hooks/queries";
 import type { Job } from "../api/types";
 import { Badge, jobStateVariant, jobStateLabel, jobTitle } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { DataTable } from "../components/ui/data-table";
 import { Dialog } from "../components/ui/dialog";
 import { Progress } from "../components/ui/progress";
 import { Spinner } from "../components/ui/spinner";
-import { Table, TBody, TD, TH, THead, TR } from "../components/ui/table";
 import { cn } from "../lib/cn";
 
 const STATE_OPTIONS = [
@@ -36,6 +37,15 @@ function fmtTime(iso: string | null): string {
 // The most relevant timestamp: when it finished, else started, else created.
 function jobWhen(job: Job): string {
   return fmtTime(job.finished_at ?? job.started_at ?? job.created_at);
+}
+
+// Numeric epoch for the same "When" value, used as the sort key.
+function jobWhenEpoch(job: Job): number {
+  const iso = job.finished_at ?? job.started_at ?? job.created_at;
+  if (!iso) return 0;
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+  const t = d.getTime();
+  return isNaN(t) ? 0 : t;
 }
 
 function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
@@ -116,6 +126,120 @@ export default function Jobs() {
     return c != null ? `${opt.label} (${c})` : opt.label;
   }
 
+  const columns = useMemo<ColumnDef<Job, unknown>[]>(
+    () => [
+      {
+        id: "id",
+        header: "Job ID",
+        accessorKey: "id",
+        cell: ({ row }) => (
+          <span className="font-mono text-muted">{row.original.id}</span>
+        ),
+      },
+      {
+        id: "title",
+        header: "Title",
+        accessorFn: (job) => jobTitle(job),
+        cell: ({ row }) => jobTitle(row.original),
+      },
+      {
+        id: "state",
+        header: "State",
+        accessorKey: "state",
+        cell: ({ row }) => {
+          const job = row.original;
+          return (
+            <Badge variant={jobStateVariant(job.phase && job.state === "running" ? job.phase : job.state)}>
+              {jobStateLabel(job)}
+            </Badge>
+          );
+        },
+      },
+      {
+        id: "progress",
+        header: "Progress",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const job = row.original;
+          return job.state === "running" ? (
+            <div className="flex items-center gap-2 min-w-[100px]">
+              <Progress value={job.progress} className="flex-1" />
+              <span className="font-mono text-xs text-muted whitespace-nowrap">
+                {job.progress}%
+              </span>
+            </div>
+          ) : (
+            <span className="text-muted">—</span>
+          );
+        },
+      },
+      {
+        id: "reduction",
+        header: "Reduction",
+        accessorFn: (job) => job.reduction_pct ?? null,
+        sortUndefined: "last",
+        cell: ({ row }) => {
+          const job = row.original;
+          return job.reduction_pct != null ? (
+            <span className={job.reduction_pct > 0 ? "text-accent font-mono" : "text-state-failed font-mono"}>
+              {job.reduction_pct.toFixed(1)}%
+            </span>
+          ) : (
+            <span className="text-muted">—</span>
+          );
+        },
+      },
+      {
+        id: "when",
+        header: "When",
+        accessorFn: (job) => jobWhenEpoch(job),
+        cell: ({ row }) => (
+          <span className="text-sm text-muted whitespace-nowrap tabular-nums">
+            {jobWhen(row.original)}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const job = row.original;
+          return (
+            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+              {(job.state === "queued" || job.state === "running") && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => actions.cancel.mutate(job.id)}
+                  disabled={actions.cancel.isPending}
+                >
+                  Cancel
+                </Button>
+              )}
+              {(job.state === "failed" ||
+                job.state === "skipped_larger" ||
+                job.state === "cancelled") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => actions.retry.mutate(job.id)}
+                  disabled={actions.retry.isPending}
+                >
+                  Retry
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setDetailJob(job)}>
+                Details
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [actions],
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -155,95 +279,13 @@ export default function Jobs() {
 
       {!isLoading && jobs.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden">
-          <Table>
-            <THead>
-              <TR>
-                <TH>Job ID</TH>
-                <TH>Title</TH>
-                <TH>State</TH>
-                <TH>Progress</TH>
-                <TH>Reduction</TH>
-                <TH>When</TH>
-                <TH>Actions</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {jobs.map((job) => (
-                <TR
-                  key={job.id}
-                  className="cursor-pointer"
-                  onClick={() => setDetailJob(job)}
-                >
-                  <TD className="font-mono text-muted">{job.id}</TD>
-                  <TD>{jobTitle(job)}</TD>
-                  <TD>
-                    <Badge variant={jobStateVariant(job.phase && job.state === "running" ? job.phase : job.state)}>
-                      {jobStateLabel(job)}
-                    </Badge>
-                  </TD>
-                  <TD>
-                    {job.state === "running" ? (
-                      <div className="flex items-center gap-2 min-w-[100px]">
-                        <Progress value={job.progress} className="flex-1" />
-                        <span className="font-mono text-xs text-muted whitespace-nowrap">
-                          {job.progress}%
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </TD>
-                  <TD>
-                    {job.reduction_pct != null ? (
-                      <span className={job.reduction_pct > 0 ? "text-accent font-mono" : "text-state-failed font-mono"}>
-                        {job.reduction_pct.toFixed(1)}%
-                      </span>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </TD>
-                  <TD>
-                    <span className="text-sm text-muted whitespace-nowrap">
-                      {jobWhen(job)}
-                    </span>
-                  </TD>
-                  <TD onClick={(e) => e.stopPropagation()}>
-                    <div className="flex gap-1">
-                      {(job.state === "queued" || job.state === "running") && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => actions.cancel.mutate(job.id)}
-                          disabled={actions.cancel.isPending}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                      {(job.state === "failed" ||
-                        job.state === "skipped_larger" ||
-                        job.state === "cancelled") && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => actions.retry.mutate(job.id)}
-                          disabled={actions.retry.isPending}
-                        >
-                          Retry
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setDetailJob(job)}
-                      >
-                        Details
-                      </Button>
-                    </div>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={jobs}
+            getRowId={(job) => String(job.id)}
+            initialSorting={[{ id: "when", desc: true }]}
+            onRowClick={(job) => setDetailJob(job)}
+          />
         </div>
       )}
 

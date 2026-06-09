@@ -1,19 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { usePageTitle } from '../hooks/usePageTitle';
 import { Badge, eligibilityVariant } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
+import { DataTable } from "../components/ui/data-table";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Spinner } from "../components/ui/spinner";
-import {
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-} from "../components/ui/table";
 import { useActions, useLibrary } from "../hooks/queries";
 import type { MediaItem } from "../api/types";
 import { cn } from "../lib/cn";
@@ -65,6 +59,119 @@ export default function Library() {
 
   const total = data?.total ?? 0;
   const items = data?.items ?? [];
+
+  const columns = useMemo<ColumnDef<MediaItem, unknown>[]>(
+    () => [
+      {
+        id: "title",
+        header: "Series / Title",
+        accessorFn: (item) => seriesLabel(item),
+        cell: ({ row }) => (
+          <span className="truncate block max-w-xs" title={seriesLabel(row.original)}>
+            {seriesLabel(row.original)}
+          </span>
+        ),
+      },
+      {
+        id: "season",
+        header: "Season",
+        accessorFn: (item) => (item.source === "sonarr" ? item.season : null),
+        sortUndefined: "last",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm text-muted tabular-nums">
+            {row.original.source === "sonarr" ? pad2(row.original.season) : "—"}
+          </span>
+        ),
+      },
+      {
+        id: "episode",
+        header: "Episode",
+        accessorFn: (item) => (item.source === "sonarr" ? item.episode : null),
+        sortUndefined: "last",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm text-muted tabular-nums">
+            {row.original.source === "sonarr" ? pad2(row.original.episode) : "—"}
+          </span>
+        ),
+      },
+      {
+        id: "source",
+        header: "Source",
+        accessorKey: "source",
+        cell: ({ row }) => (
+          <Badge variant="neutral" className="capitalize">
+            {row.original.source}
+          </Badge>
+        ),
+      },
+      {
+        id: "resolution",
+        header: "Resolution",
+        accessorFn: (item) => item.resolution ?? null,
+        sortUndefined: "last",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm tabular-nums">
+            {row.original.resolution ? `${row.original.resolution}p` : "—"}
+          </span>
+        ),
+      },
+      {
+        id: "quality",
+        header: "Quality",
+        accessorFn: (item) => item.quality ?? "",
+        cell: ({ row }) => (
+          <span className="text-sm text-muted">{row.original.quality ?? "—"}</span>
+        ),
+      },
+      {
+        id: "eligibility",
+        header: "Eligibility",
+        accessorKey: "eligibility",
+        cell: ({ row }) => (
+          <Badge variant={eligibilityVariant(row.original.eligibility)}>
+            {row.original.eligibility}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <div className="flex gap-2">
+              {item.eligibility === "needs_transcode" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => actions.enqueueItem.mutate(item.id)}
+                  disabled={actions.enqueueItem.isPending}
+                  title="Queue this item for transcoding"
+                >
+                  Enqueue
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() =>
+                  actions.addExclusion.mutate({
+                    source: item.source,
+                    key: exclusionKey(item),
+                  })
+                }
+                disabled={actions.addExclusion.isPending}
+              >
+                Exclude
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [actions],
+  );
 
   function handleSourceChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setSource(e.target.value === "all" ? undefined : e.target.value);
@@ -187,85 +294,11 @@ export default function Library() {
         )}
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-          <Table>
-            <THead>
-              <TR>
-                <TH>Series / Title</TH>
-                <TH>Season</TH>
-                <TH>Episode</TH>
-                <TH>Source</TH>
-                <TH>Resolution</TH>
-                <TH>Quality</TH>
-                <TH>Eligibility</TH>
-                <TH>Actions</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {items.map((item) => (
-                <TR key={item.id}>
-                  <TD className="max-w-xs">
-                    <span className="truncate block">{seriesLabel(item)}</span>
-                  </TD>
-                  <TD>
-                    <span className="font-mono text-sm text-muted">
-                      {item.source === "sonarr" ? pad2(item.season) : "—"}
-                    </span>
-                  </TD>
-                  <TD>
-                    <span className="font-mono text-sm text-muted">
-                      {item.source === "sonarr" ? pad2(item.episode) : "—"}
-                    </span>
-                  </TD>
-                  <TD>
-                    <Badge variant="neutral" className="capitalize">
-                      {item.source}
-                    </Badge>
-                  </TD>
-                  <TD>
-                    <span className="font-mono text-sm">
-                      {item.resolution ? `${item.resolution}p` : "—"}
-                    </span>
-                  </TD>
-                  <TD>
-                    <span className="text-sm text-muted">{item.quality ?? "—"}</span>
-                  </TD>
-                  <TD>
-                    <Badge variant={eligibilityVariant(item.eligibility)}>
-                      {item.eligibility}
-                    </Badge>
-                  </TD>
-                  <TD>
-                    <div className="flex gap-2">
-                      {item.eligibility === "needs_transcode" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => actions.enqueueItem.mutate(item.id)}
-                          disabled={actions.enqueueItem.isPending}
-                          title="Queue this item for transcoding"
-                        >
-                          Enqueue
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          actions.addExclusion.mutate({
-                            source: item.source,
-                            key: exclusionKey(item),
-                          })
-                        }
-                        disabled={actions.addExclusion.isPending}
-                      >
-                        Exclude
-                      </Button>
-                    </div>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+            <DataTable
+              columns={columns}
+              data={items}
+              getRowId={(item) => String(item.id)}
+            />
           </CardContent>
         </Card>
         </>

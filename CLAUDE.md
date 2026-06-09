@@ -127,7 +127,7 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `engine/queue.py` — turns eligible items into `queued` jobs (deduped)
 - `engine/worker.py` — serial worker: download → transcode → replace-or-exclude → cleanup
 - `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status), `auth.py` (single-password session login, `require_auth`). `worker_controller.py` runs the continuous background transcode worker (cancellable).
-- `web/` — React SPA (Cycle 3, Vite + Tailwind + shadcn-style primitives in `src/components/ui/`): `api/` client+types, `hooks/` (TanStack Query + SSE), `pages/` (Dashboard/Library/Jobs/Exclusions/Login), `auth/` (AuthGate). Built to `web/dist`, served by FastAPI.
+- `web/` — React SPA (Cycle 3, Vite + Tailwind + shadcn-style primitives in `src/components/ui/`): `api/` client+types, `hooks/` (TanStack Query + SSE), `pages/` (Dashboard/Library/Jobs/Exclusions/Login), `auth/` (AuthGate). Built to `web/dist`, served by FastAPI. Data tables (Library/Jobs/Exclusions) use a shared `components/ui/data-table.tsx` (TanStack Table) that renders through the Tailwind `Table` primitives — columns are click-to-sort with `aria-sort`; Jobs defaults to the "When" column (`finished_at ?? started_at ?? created_at`) descending.
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
 - `sftp_client.py` — upload/download via Paramiko with tqdm progress bars

@@ -110,6 +110,21 @@ test("shows the job timestamp in the When column", async () => {
   expect(within(showRow!).getByText(created)).toBeInTheDocument();
 });
 
+test("defaults to sorting by When descending (most recent first)", async () => {
+  vi.stubGlobal("fetch", makeFetch());
+  wrap(<Jobs />);
+
+  await screen.findByText(/Movie X/);
+
+  // Movie X's When = finished_at 10:30; Show A's When = created_at 09:00.
+  // Descending by When puts Movie X (more recent) in the first body row.
+  const rows = screen.getAllByRole("row");
+  // rows[0] is the header row; rows[1] is the first data row.
+  const firstDataRow = rows[1];
+  expect(firstDataRow.textContent).toContain("Movie X");
+  expect(firstDataRow.textContent).not.toContain("Show A");
+});
+
 test("clicking Cancel on queued job triggers POST /api/jobs/1/cancel", async () => {
   const mockFetch = makeFetch();
   vi.stubGlobal("fetch", mockFetch);
