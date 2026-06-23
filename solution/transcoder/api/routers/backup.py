@@ -1,3 +1,7 @@
+import zipfile
+from datetime import datetime, timezone
+
+from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -29,7 +33,6 @@ def create_backup(body: BackupRequest):
         blob = make_backup(db_path, ENV_PATH, body.passphrase)
     except Exception as exc:  # snapshot/encrypt failure
         raise HTTPException(status_code=500, detail=f"backup failed: {exc}")
-    from datetime import datetime, timezone
     name = "h265-backup-" + datetime.now(timezone.utc).strftime("%Y%m%d") + ".zip"
     return Response(content=blob, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
@@ -40,7 +43,7 @@ async def restore_backup(file: UploadFile = File(...), passphrase: str = Form(..
     zip_bytes = await file.read()
     try:
         db_bytes, env_text, _manifest = read_backup(zip_bytes, passphrase)
-    except Exception:
+    except (ValueError, KeyError, zipfile.BadZipFile, InvalidTag):
         raise HTTPException(status_code=400, detail="wrong passphrase or corrupt backup")
     db_path = db_path_from_url(settings.DATABASE_URL)
     stage_restore(db_bytes, env_text, _base_dir(db_path))
