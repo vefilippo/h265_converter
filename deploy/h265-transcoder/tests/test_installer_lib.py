@@ -88,6 +88,29 @@ def test_shortcut_spec_points_pythonw_at_tray_no_console():
     assert spec["working_dir"] == r"C:\X\H265Transcoder\solution"
 
 
+def test_uninstall_script_wipes_whole_dir_with_bounded_retry():
+    s = lib.uninstall_script(r"C:\Users\me\AppData\Local\H265Transcoder")
+    # Targets the whole install dir, recursively + quietly.
+    assert 'set "DIR=C:\\Users\\me\\AppData\\Local\\H265Transcoder"' in s
+    assert 'rmdir /s /q "%DIR%"' in s
+    # Retries until the folder is actually gone (single rmdir races the exe lock).
+    assert ":retry" in s and "goto retry" in s
+    assert 'if not exist "%DIR%" goto done' in s
+    # Bounded so a permanent lock can't loop forever.
+    assert "geq 30 goto done" in s
+    # Self-deletes the script afterwards.
+    assert 'del "%~f0"' in s
+
+
+def test_uninstall_script_has_no_parens_inside_if_block():
+    # Literal ( ) inside an `if (...)` closes the block early (". was unexpected").
+    # The only legitimate parens are the `(goto)` self-delete idiom.
+    s = lib.uninstall_script(r"C:\X")
+    for line in s.splitlines():
+        if line.startswith("if "):
+            assert "(" not in line and ")" not in line
+
+
 def test_payload_should_ship_only_solution_tree():
     assert lib.payload_should_ship("solution/transcoder/api/app.py")
     assert lib.payload_should_ship("solution/tray.pyw")

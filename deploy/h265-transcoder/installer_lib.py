@@ -119,6 +119,32 @@ def shortcut_spec(install_dir: str, icon_path: str | None = None) -> dict:
     }
 
 
+def uninstall_script(install_dir: str) -> str:
+    """A .bat that deletes the WHOLE install dir (db, .env, logs, venv, the
+    uninstaller exe), retrying until it's gone, then self-deletes.
+
+    The running uninstaller exe lives inside the dir and only releases its image
+    lock when it exits, and the app may hold handles for a moment — so a single
+    rmdir loses the race and leaves data behind. We retry (bounded, to avoid an
+    infinite loop on a permanent lock). Uses a plain label loop, not parens in an
+    `if` block (that closes the block early — see windows-installer.md gotchas).
+    """
+    return (
+        "@echo off\r\n"
+        f'set "DIR={install_dir}"\r\n'
+        "set /a n=0\r\n"
+        ":retry\r\n"
+        'rmdir /s /q "%DIR%" 2>nul\r\n'
+        'if not exist "%DIR%" goto done\r\n'
+        "set /a n+=1\r\n"
+        "if %n% geq 30 goto done\r\n"
+        "ping 127.0.0.1 -n 4 >nul\r\n"
+        "goto retry\r\n"
+        ":done\r\n"
+        '(goto) 2>nul & del "%~f0"\r\n'
+    )
+
+
 def payload_should_ship(rel: str) -> bool:
     """True if a git-tracked path belongs in the bundled payload.
 
