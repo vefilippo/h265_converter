@@ -11,7 +11,7 @@ from transcoder.restore import apply_pending_restore
 from transcoder.backup import db_path_from_url
 from transcoder.engine.worker import reconcile_stale_jobs
 from transcoder.api import state
-from transcoder.config import settings
+from transcoder.config import settings, resolve_secret_key
 from transcoder.api.auth import router as auth_router, require_auth
 from transcoder.api.routers import settings as settings_router
 
@@ -93,7 +93,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, same_site="lax")
+    app.add_middleware(SessionMiddleware, secret_key=resolve_secret_key(), same_site="lax")
 
     # Open: health (defined above) + auth + webhook (self-authenticates via Basic).
     app.include_router(auth_router)

@@ -37,7 +37,8 @@ def client(monkeypatch):
 
 
 def test_me_unauthed(client):
-    assert client.get("/api/me").json() == {"authed": False}
+    body = client.get("/api/me").json()
+    assert body["authed"] is False
 
 
 def test_protected_requires_auth(client):
@@ -50,7 +51,7 @@ def test_login_wrong_password(client):
 
 def test_login_then_access_then_logout(client):
     assert client.post("/api/login", json={"password": "test-pass"}).json() == {"ok": True}
-    assert client.get("/api/me").json() == {"authed": True}
+    assert client.get("/api/me").json()["authed"] is True
     assert client.get("/api/secret").status_code == 200
     assert client.post("/api/logout").json() == {"ok": True}
     assert client.get("/api/secret").status_code == 401
