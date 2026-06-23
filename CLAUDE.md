@@ -51,7 +51,7 @@ enqueue of just that title; non-`Download` events are ack'd and ignored). A
 continuous background worker drains the job queue automatically while the server
 runs.
 
-**Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `solution/web/`, served by FastAPI behind a single-password login. Requires `APP_PASSWORD` + `SECRET_KEY` in `.env`.
+**Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `solution/web/`, served by FastAPI behind a single-password login. A fresh install needs no `.env`: it boots to a first-run setup wizard (set a dashboard password, then optionally Sonarr/Radarr/SFTP/HandBrake — all also editable later in Settings). `SECRET_KEY` is read from `.env` if present, else auto-generated and persisted to a `secret_key` file beside the DB. Providing `APP_PASSWORD`/`SECRET_KEY` in `.env` still works and skips the password step.
 ```bash
 # Dev (hot reload): two processes
 cd solution && python -m transcoder.api          # API on :8765
