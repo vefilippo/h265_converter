@@ -1,5 +1,6 @@
 import { Spinner } from "../components/ui/spinner";
 import Login from "../pages/Login";
+import Setup from "../pages/Setup";
 import { useMe } from "./useMe";
 
 interface AuthGateProps {
@@ -15,6 +16,10 @@ export function AuthGate({ children }: AuthGateProps) {
         <Spinner size="lg" />
       </div>
     );
+  }
+
+  if (data?.needs_setup) {
+    return <Setup onDone={() => refetch()} />;
   }
 
   if (!data?.authed) {

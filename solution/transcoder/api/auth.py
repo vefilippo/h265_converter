@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from transcoder.config import settings
-from transcoder.repo import get_setting
+from transcoder.repo import get_setting, set_setting
 from transcoder.db import SessionLocal
 
 router = APIRouter(prefix="/api")
@@ -40,6 +40,35 @@ def logout(request: Request):
     return {"ok": True}
 
 
+def _password_configured(db) -> bool:
+    """True once a login password exists — a stored hash or a non-empty env
+    APP_PASSWORD. Drives first-run detection."""
+    return get_setting(db, "app_password_hash") is not None or bool(settings.APP_PASSWORD)
+
+
 @router.get("/me")
 def me(request: Request):
-    return {"authed": bool(request.session.get("authed"))}
+    with SessionLocal() as db:
+        configured = _password_configured(db)
+    return {"authed": bool(request.session.get("authed")), "needs_setup": not configured}
+
+
+class SetupPasswordIn(BaseModel):
+    password: str
+
+
+@router.post("/setup/password")
+def setup_password(body: SetupPasswordIn, request: Request):
+    """Set the initial dashboard password on a fresh install. Open (no auth)
+    but allowed ONLY while no password exists, so it can't hijack a configured
+    instance. On success, log the caller in."""
+    if not body.password.strip():
+        raise HTTPException(status_code=422, detail="Password required")
+    with SessionLocal() as db:
+        if _password_configured(db):
+            raise HTTPException(status_code=409, detail="Already configured")
+        new_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+        set_setting(db, "app_password_hash", new_hash)
+        db.commit()
+    request.session["authed"] = True
+    return {"ok": True}

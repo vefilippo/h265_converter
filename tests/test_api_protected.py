@@ -10,7 +10,7 @@ def test_routers_protected_without_session(api):
     assert client.post("/api/scan", json={"app": "all", "scope": "all"}).status_code == 401
     # open routes stay reachable
     assert client.get("/api/health").status_code == 200
-    assert client.get("/api/me").json() == {"authed": False}
+    assert client.get("/api/me").json()["authed"] is False
 
 
 def test_reauth_restores_access(api):
