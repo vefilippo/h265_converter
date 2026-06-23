@@ -51,3 +51,29 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def resolve_secret_key() -> str:
+    """Session-signing key. Prefer an explicit env SECRET_KEY; otherwise read a
+    `secret_key` file next to the database, generating and persisting one on
+    first run so sessions survive restarts. Kept out of the DB because the
+    SessionMiddleware is wired up before init_db() runs."""
+    import os
+    import secrets
+    from pathlib import Path
+
+    if settings.SECRET_KEY:
+        return settings.SECRET_KEY
+
+    from transcoder.backup import db_path_from_url  # lazy: avoid import cycle
+    db_path = db_path_from_url(settings.DATABASE_URL)
+    key_file = Path(os.path.dirname(os.path.abspath(db_path)) or ".") / "secret_key"
+    if key_file.exists():
+        existing = key_file.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+
+    generated = secrets.token_urlsafe(48)
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    key_file.write_text(generated, encoding="utf-8")
+    return generated
