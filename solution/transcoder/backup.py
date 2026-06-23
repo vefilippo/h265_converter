@@ -29,3 +29,24 @@ def decrypt_env(ciphertext: bytes, passphrase: str, crypto: dict) -> str:
     nonce = base64.b64decode(crypto["nonce"])
     key = derive_key(passphrase, salt, crypto["n"], crypto["r"], crypto["p"])
     return AESGCM(key).decrypt(nonce, ciphertext, None).decode()
+
+
+APP_ID = "h265-transcoder"
+SCHEMA_VERSION = 1
+
+
+def build_manifest(app_version: str, crypto: dict, created_at: str) -> dict:
+    return {
+        "app": APP_ID,
+        "schema_version": SCHEMA_VERSION,
+        "app_version": app_version,
+        "created_at": created_at,
+        "crypto": crypto,
+    }
+
+
+def validate_manifest(m: dict) -> None:
+    if m.get("app") != APP_ID:
+        raise ValueError("not an H.265 Transcoder backup")
+    if int(m.get("schema_version", 0)) > SCHEMA_VERSION:
+        raise ValueError("backup is from a newer version of the app")
