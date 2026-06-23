@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Spinner } from '../components/ui/spinner';
 import { api, getSettings, updateSettings } from '../api/client';
+import BackupRestoreCard from './BackupRestoreCard';
 import type { SettingsUpdate } from '../api/types';
 
 const REDACTED = '••••••••';
@@ -570,6 +571,11 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      {/* ── Backup & Restore ── */}
+      <section aria-labelledby="backup-heading" className="mb-6">
+        <BackupRestoreCard />
       </section>
     </main>
   );

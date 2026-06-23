@@ -41,6 +41,9 @@ Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
 `POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`, `POST /api/jobs/delete` (bulk-delete terminal-state jobs by id list), `GET /api/jobs/{id}/logs`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE), `GET /api/logs`,
 `POST /api/library/{id}/enqueue`,
+`POST /api/backup` (JSON `{passphrase}` → streams an encrypted `backup.zip`),
+`POST /api/restore` (multipart `file` + `passphrase`; stages the backup, then the
+app relaunches itself and a pre-DB-init bootstrap applies it),
 `POST /api/webhook/{source}` (`source` = `sonarr`|`radarr`; open route that
 self-authenticates via HTTP Basic against `webhook_username`/`webhook_password_hash`
 settings — Sonarr/Radarr call it on import to trigger a targeted discover +
@@ -57,7 +60,7 @@ cd solution/web && npm install && npm run dev     # UI on :5173, proxies /api ->
 cd solution/web && npm run build                  # -> web/dist
 cd solution && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, and a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use). Frontend tests: `cd solution/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use, and a Backup & Restore section to download an encrypted state backup and restore one onto a new instance). Frontend tests: `cd solution/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 

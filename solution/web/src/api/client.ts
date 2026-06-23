@@ -44,3 +44,30 @@ export const updateSettings = (payload: SettingsUpdate): Promise<{ updated: stri
 
 export const testConnection = (service: 'sonarr' | 'radarr' | 'sftp'): Promise<{ ok: boolean; error?: string }> =>
   api.post<{ ok: boolean; error?: string }>(`/api/settings/test/${service}`);
+
+export async function downloadBackup(passphrase: string): Promise<Blob> {
+  const res = await fetch('/api/backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passphrase }),
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    let detail = 'backup failed';
+    try { const j = await res.json(); detail = j?.detail ?? detail; } catch { /* non-JSON error body */ }
+    throw new ApiError(res.status, detail);
+  }
+  return res.blob();
+}
+
+export async function restoreBackup(file: File, passphrase: string): Promise<void> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('passphrase', passphrase);
+  const res = await fetch('/api/restore', { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    let detail = 'restore failed';
+    try { const j = await res.json(); detail = j?.detail ?? detail; } catch { /* */ }
+    throw new ApiError(res.status, detail);
+  }
+}
