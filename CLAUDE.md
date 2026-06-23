@@ -71,7 +71,10 @@ declare a fix or feature done until tests are green.
 
 - **Backend (pytest):** `cd source_code && python -m pytest` (config in `pytest.ini`;
   tests live in `source_code/tests/`, named `test_*.py`).
-- **Frontend (Vitest):** `cd source_code/web && npm test`.
+- **Frontend (Vitest):** `cd source_code/web && npm test`. This runs `tsc -b`
+  (typecheck) before Vitest, so type errors fail the suite — Vitest alone does not
+  typecheck, and the production build (`npm run build`) runs the same `tsc -b`. Use
+  `npm run typecheck` to typecheck without running tests.
 
 For bug fixes, first add a failing test that reproduces the defect, then fix it — this
 catches the *real* root cause rather than a surface symptom, and guards against the
