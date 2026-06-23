@@ -34,6 +34,17 @@ function fmtTime(iso: string | null): string {
   return isNaN(d.getTime()) ? "—" : d.toLocaleString();
 }
 
+const DELETABLE_STATES = new Set([
+  "done",
+  "failed",
+  "skipped_larger",
+  "cancelled",
+]);
+
+function isJobDeletable(job: Job): boolean {
+  return DELETABLE_STATES.has(job.state);
+}
+
 // The most relevant timestamp: when it finished, else started, else created.
 function jobWhen(job: Job): string {
   return fmtTime(job.finished_at ?? job.started_at ?? job.created_at);
@@ -105,6 +116,8 @@ export default function Jobs() {
   usePageTitle("Jobs");
   const [stateFilter, setStateFilter] = useState("");
   const [detailJob, setDetailJob] = useState<Job | null>(null);
+  const [selected, setSelected] = useState<Job[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data, isLoading } = useJobs(stateFilter || undefined);
   const { data: allData } = useJobs(undefined); // all jobs for count badges
@@ -267,6 +280,22 @@ export default function Jobs() {
         </div>
       </div>
 
+      {selected.length > 0 && (
+        <div className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2">
+          <span className="text-sm">{selected.length} selected</span>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       {isLoading && (
         <div className="flex justify-center py-8">
           <Spinner size="lg" />
@@ -285,12 +314,50 @@ export default function Jobs() {
             getRowId={(job) => String(job.id)}
             initialSorting={[{ id: "when", desc: true }]}
             onRowClick={(job) => setDetailJob(job)}
+            enableSelection
+            isRowSelectable={isJobDeletable}
+            onSelectionChange={setSelected}
           />
         </div>
       )}
 
       {detailJob && (
         <JobDetailDialog job={detailJob} onClose={() => setDetailJob(null)} />
+      )}
+
+      {confirmDelete && (
+        <Dialog
+          open
+          onClose={() => setConfirmDelete(false)}
+          title={`Delete ${selected.length} job(s)?`}
+        >
+          <p className="text-sm text-muted">
+            This permanently removes the selected job records and their history.
+            It does not affect your media files.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={actions.deleteJobs.isPending}
+              onClick={() =>
+                actions.deleteJobs.mutate(
+                  selected.map((j) => j.id),
+                  {
+                    onSuccess: () => {
+                      setConfirmDelete(false);
+                      setSelected([]);
+                    },
+                  },
+                )
+              }
+            >
+              Delete
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

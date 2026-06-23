@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   type ColumnDef,
   type SortingState,
@@ -100,10 +100,23 @@ export function DataTable<T>({
     getRowId: getRowId ? (row) => getRowId(row) : undefined,
   });
 
+  // Skip the initial mount call when nothing is selected — calling the parent
+  // setter with [] on every mount causes an extra re-render with no semantic
+  // change. We fire once `rowSelection` has actually changed from its initial {}.
+  const mountedRef = useRef(false);
   useEffect(() => {
     if (!onSelectionChange) return;
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      // Only skip if starting with an empty selection (the common case).
+      if (Object.keys(rowSelection).length === 0) return;
+    }
     onSelectionChange(table.getSelectedRowModel().rows.map((r) => r.original));
-  }, [rowSelection, onSelectionChange, table]);
+    // `rowSelection` is the reactive state; `table` is recreated each render but its
+    // selectedRowModel is fully derived from `rowSelection`, so excluding `table`
+    // from deps is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowSelection, onSelectionChange]);
 
   return (
     <Table>
