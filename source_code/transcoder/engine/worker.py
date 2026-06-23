@@ -90,7 +90,8 @@ def process_one_job(
 
         os.makedirs("./tmp", exist_ok=True)
         file_path = _local_path(item)
-        tmp_file = os.path.join("./tmp", os.path.basename(file_path))
+        ext = os.path.splitext(os.path.basename(file_path))[1]
+        tmp_file = os.path.join("./tmp", f"job_{job.id}{ext}")
         dl = download(
             get_effective(session, "sftp_host", settings.SFTP_HOST),
             int(get_effective(session, "sftp_port", str(settings.SFTP_PORT))),
