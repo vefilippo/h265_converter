@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
+import time
+import socket
 from pathlib import Path
 
 MARKER = "RESTORE_PENDING"
@@ -34,3 +38,34 @@ def apply_pending_restore(base_dir: str, db_path: str, env_path: str) -> bool:
         os.replace(env_incoming, env_path)
     shutil.rmtree(pend)
     return True
+
+
+_DETACHED = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
+
+
+def relaunch_argv(python_exe: str, package_dir: str) -> list[str]:
+    return [python_exe, "-m", "transcoder.api"]
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def schedule_relaunch(python_exe: str | None = None, package_dir: str | None = None,
+                      port: int = 8765) -> None:
+    """Spawn a detached process that waits for the port to free, then restarts
+    the API. Survives this process exiting. Best-effort; not unit-tested."""
+    python_exe = python_exe or sys.executable
+    package_dir = package_dir or str(__import__("pathlib").Path(__file__).resolve().parent.parent)
+    waiter = (
+        "import socket,time,subprocess,sys\n"
+        f"for _ in range(60):\n"
+        f"    s=socket.socket()\n"
+        f"    free=s.connect_ex(('127.0.0.1',{port}))!=0\n"
+        f"    s.close()\n"
+        f"    if free: break\n"
+        f"    time.sleep(0.5)\n"
+        f"subprocess.Popen([r'{python_exe}','-m','transcoder.api'], cwd=r'{package_dir}')\n"
+    )
+    subprocess.Popen([python_exe, "-c", waiter], creationflags=_DETACHED)
