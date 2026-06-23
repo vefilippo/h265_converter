@@ -177,30 +177,34 @@ def uninstall(install_dir: str | None = None, sink=None) -> None:
 
 
 def _stop_app(install_dir: str, sink=None) -> None:
-    """Stop only THIS install's tray (match command line scoped to the install
-    dir — never blanket-kill pythonw.exe)."""
+    """Stop only THIS install's processes — the tray (pythonw), the server
+    (python -m transcoder.api) and any HandBrakeCLI child — matched by the
+    install dir in their command line, so a copy installed elsewhere (or a dev
+    checkout) is never touched. Runs elevated under --uac-admin, so it can also
+    stop the GPU/HandBrake child the at-logon (/rl highest) task spawned."""
+    needle = install_dir.replace("\\", "\\\\")
     ps = (
-        "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | "
-        "Where-Object { $_.CommandLine -like '*%s*tray.pyw*' } | "
-        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
-    ) % install_dir.replace("\\", "\\\\")
+        "Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -in 'pythonw.exe','python.exe','HandBrakeCLI.exe' -and "
+        "$_.CommandLine -like '*%s*' } | ForEach-Object { "
+        "Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    ) % needle
     _run(["powershell", "-NoProfile", "-Command", ps], sink=sink, check=False)
 
 
 def _schedule_self_delete(install_dir: str, sink=None) -> None:
-    """The exe lives inside install_dir and can't delete itself — spawn a
-    detached .bat that waits, removes the dir, then deletes itself."""
+    """Remove the ENTIRE install dir (db, .env, logs, venv, the uninstaller exe).
+
+    The running uninstaller exe lives inside install_dir and can't delete its own
+    image, and the app may take a moment to release file handles — so spawn a
+    detached .bat that RETRIES rmdir until the folder is gone (bounded ~90s) then
+    self-deletes. A single rmdir loses that race and leaves data behind. Plain
+    label loop (no parens-in-if; see windows-installer.md cmd gotchas)."""
     bat = Path(os.environ.get("TEMP", ".")) / "h265-transcoder-uninstall.bat"
-    bat.write_text(
-        "@echo off\r\n"
-        "ping 127.0.0.1 -n 3 >nul\r\n"
-        f'rmdir /s /q "{install_dir}"\r\n'
-        '(goto) 2>nul & del "%~f0"\r\n',
-        encoding="utf-8",
-    )
+    bat.write_text(lib.uninstall_script(install_dir), encoding="utf-8")
     subprocess.Popen(["cmd", "/c", str(bat)],
                      creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW)
-    _emit("[uninstall] scheduled folder removal", sink)
+    _emit("[uninstall] removing install folder and all its data …", sink)
 
 
 # --- GUI wizard (tkinter + ttk + sv-ttk, degrades gracefully) ------------------
@@ -218,7 +222,10 @@ def run_gui(do_uninstall: bool) -> None:
         pass  # plain ttk if the theme data wasn't bundled
 
     intro = (
-        "This will remove H.265 Transcoder from this PC."
+        "⚠  This permanently removes H.265 Transcoder AND ALL ITS DATA from\n"
+        f"    {lib.default_install_dir()}\n\n"
+        "Deleted for good: the database (job history, exclusions, settings),\n"
+        "your .env credentials, and all logs. This cannot be undone."
         if do_uninstall else
         "Installs H.265 Transcoder for the current user.\n\n"
         "Requires (not bundled): Python 3.10+, HandBrake CLI, and an NVIDIA GPU "
@@ -237,15 +244,26 @@ def run_gui(do_uninstall: bool) -> None:
 
     logbox = tk.Text(root, height=14, wrap="word")
     logbox.pack(fill="both", expand=True, padx=16, pady=12)
-    q: queue.Queue[str] = queue.Queue()
+    # Log strings flow through the queue; ("__done__", ok) signals completion so
+    # the Tk thread (never the worker thread) updates the button.
+    q: queue.Queue = queue.Queue()
+    run_label = "Uninstall" if do_uninstall else "Install"
 
     def drain():
         while not q.empty():
-            logbox.insert("end", q.get() + "\n")
-            logbox.see("end")
+            item = q.get()
+            if isinstance(item, tuple) and item and item[0] == "__done__":
+                if item[1]:  # success → offer a real Close button (no more "stuck")
+                    run_btn.config(text="Close", state="normal", command=root.destroy)
+                else:        # failure → re-enable so the user can retry
+                    run_btn.config(text=run_label, state="normal", command=go)
+            else:
+                logbox.insert("end", item + "\n")
+                logbox.see("end")
         root.after(120, drain)
 
     def worker():
+        ok = True
         try:
             if do_uninstall:
                 uninstall(dir_var.get(), sink=q.put)
@@ -253,13 +271,15 @@ def run_gui(do_uninstall: bool) -> None:
                 install(dir_var.get(), sink=q.put)
             q.put("\n✓ Finished. You may close this window.")
         except Exception as exc:  # noqa: BLE001
+            ok = False
             q.put(f"\n✗ Failed: {exc}")
+        q.put(("__done__", ok))
 
     def go():
         run_btn.config(state="disabled")
         threading.Thread(target=worker, daemon=True).start()
 
-    run_btn = ttk.Button(root, text=("Uninstall" if do_uninstall else "Install"), command=go)
+    run_btn = ttk.Button(root, text=run_label, command=go)
     run_btn.pack(pady=(0, 12))
 
     drain()
