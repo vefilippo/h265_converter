@@ -77,12 +77,13 @@ def make_backup(db_path: str, env_path: str, passphrase: str,
                 app_version: str = "1.0.0", created_at: str | None = None) -> bytes:
     created_at = created_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with tempfile.TemporaryDirectory() as td:
-        snap = f"{td}/snap.db"
+        snap = os.path.join(td, "snap.db")
         snapshot_db(db_path, snap)
         with open(snap, "rb") as fh:
             db_bytes = fh.read()
     try:
-        env_text = open(env_path, encoding="utf-8").read()
+        with open(env_path, encoding="utf-8") as fh:
+            env_text = fh.read()
     except FileNotFoundError:
         env_text = ""
     ct, crypto = encrypt_env(env_text, passphrase)

@@ -45,3 +45,11 @@ def test_read_backup_wrong_passphrase_raises(tmp_path):
     blob = backup.make_backup(str(db), str(env), "right", created_at="now")
     with pytest.raises(Exception):
         backup.read_backup(blob, "wrong")
+
+
+def test_make_backup_default_created_at(tmp_path):
+    db = tmp_path / "transcoder.db"; env = tmp_path / ".env"
+    _make_db(str(db)); env.write_text("X=1\n", encoding="utf-8")
+    blob = backup.make_backup(str(db), str(env), "pw")  # no created_at -> default
+    _db_bytes, _env, manifest = backup.read_backup(blob, "pw")
+    assert manifest["created_at"].endswith("Z") and len(manifest["created_at"]) >= 19
