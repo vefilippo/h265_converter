@@ -30,7 +30,7 @@ def test_worker_marks_cancelled(session, monkeypatch):
     def download(*a, **k):
         return {"success": True}
 
-    def convert(tmp, out_name, preset, progress_cb=None, cancel_event=None):
+    def convert(tmp, out_name, preset, progress_cb=None, cancel_event=None, handbrake_cli=None):
         raise TranscodeCancelled()
 
     process_one_job(session, job, {"sonarr": object()},
