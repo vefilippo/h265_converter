@@ -5,7 +5,7 @@ Windows helper scripts for the H.265 transcoder service. Run them from anywhere
 
 | Script | What it does |
 |---|---|
-| `build.bat` | Create `source_code/.venv`, install backend deps, `npm install` + `npm run build` the web UI. |
+| `build.bat` | Create `solution/.venv`, install backend deps, `npm install` + `npm run build` the web UI. |
 | `run.bat` | Start the service standalone (FastAPI + worker, serving the built UI). Needs `.env`. |
 | `clean.bat` | Remove `.venv`, `web/node_modules`, `web/dist` (asks for confirmation). Leaves `.env`/DB/source intact. |
 | `install-service.bat` | Register a scheduled task to start the service **hidden at logon** (via `run-hidden.vbs`). |
@@ -17,7 +17,7 @@ Windows helper scripts for the H.265 transcoder service. Run them from anywhere
 
 ```bat
 scripts\build.bat
-copy source_code\.env.example source_code\.env   REM then edit .env
+copy solution\.env.example solution\.env   REM then edit .env
 scripts\run.bat                                   REM open http://localhost:8765
 ```
 
@@ -37,8 +37,8 @@ A logon-task runs only after you sign in. If you need it to run with no user log
 in (a true background service), use **NSSM** instead:
 
 ```bat
-nssm install H265Transcoder "C:\...\source_code\.venv\Scripts\python.exe" "-m" "transcoder.api"
-nssm set     H265Transcoder AppDirectory "C:\...\source_code"
+nssm install H265Transcoder "C:\...\solution\.venv\Scripts\python.exe" "-m" "transcoder.api"
+nssm set     H265Transcoder AppDirectory "C:\...\solution"
 nssm start   H265Transcoder
 ```
 

@@ -27,7 +27,7 @@ Automated H.265/HEVC transcoding pipeline for your media library. Integrates wit
 
 ```bash
 # 1. Copy and fill in the config
-cp source_code/.env.example source_code/.env
+cp solution/.env.example solution/.env
 
 # 2. Build (venv + Python deps + React UI)
 scripts\build.bat
@@ -42,7 +42,7 @@ Then open <http://localhost:8765> and log in with `APP_PASSWORD`.
 
 ## Configuration
 
-All config lives in `source_code/.env` (gitignored). Copy `source_code/.env.example` and fill it in. Credentials can also be overridden at runtime from the Settings page — they are never committed.
+All config lives in `solution/.env` (gitignored). Copy `solution/.env.example` and fill it in. Credentials can also be overridden at runtime from the Settings page — they are never committed.
 
 | Variable | Description |
 | --- | --- |
@@ -90,7 +90,7 @@ All scripts live in `scripts/` (Windows batch):
 For scripted / headless use:
 
 ```bash
-cd source_code
+cd solution
 python -m transcoder.cli run all          # discover + transcode everything
 python -m transcoder.cli run sonarr new   # new TV episodes only
 python -m transcoder.cli scan radarr      # discover only, no transcoding
@@ -101,14 +101,14 @@ python -m transcoder.cli queue            # list job states
 
 ```bash
 # Backend (API on :8765)
-cd source_code && python -m transcoder.api
+cd solution && python -m transcoder.api
 
 # Frontend (hot reload — UI on :5173, proxies /api -> :8765)
-cd source_code/web && npm run dev
+cd solution/web && npm run dev
 
 # Tests
-cd source_code && python -m pytest
-cd source_code/web && npm test
+python -m pytest            # backend, from the repo root
+cd solution/web && npm test  # frontend
 ```
 
 ## Architecture
@@ -132,12 +132,29 @@ Sonarr/Radarr API
 
 | Path | Purpose |
 | --- | --- |
-| `source_code/.env.example` | Template for all required config |
-| `source_code/transcoder/` | Python backend |
-| `source_code/web/` | React frontend |
-| `source_code/tray.pyw` | Windows tray launcher |
+| `solution/.env.example` | Template for all required config |
+| `solution/transcoder/` | Python backend |
+| `solution/web/` | React frontend |
+| `solution/tray.pyw` | Windows tray launcher |
 | `scripts/` | Windows batch scripts |
+| `deploy/h265-transcoder/` | Windows installer toolchain (`build-host-setup.bat` builds `h265-transcoder-setup.exe`) |
 | `log/` | Daily-rotating logs (gitignored); 30-day archive in `log/archive/` |
+
+## Deploy
+
+The app runs natively on Windows (HandBrake NVENC on the GPU, in the logged-in
+user's session), so it ships as a **self-contained Windows installer** rather than
+a container. Build it from the repo root:
+
+```bat
+build-host-setup.bat        REM -> deploy\h265-transcoder\dist\h265-transcoder-setup.exe
+```
+
+Double-click the exe on the target PC to install (it extracts the bundled app to
+`%LOCALAPPDATA%\H265Transcoder`, builds the venv, and registers an at-logon task).
+Uninstall via Add/Remove Programs. See `deploy/h265-transcoder/README.md`. The repo
+follows the `solution-deploy-layout` convention: `solution/` is the shippable build
+context, `deploy/` holds the deploy tooling, and tests live outside both.
 
 ## License
 

@@ -4,14 +4,18 @@ Skips when the frontend hasn't been built (web/dist absent), so the backend
 suite stays green without a Node build.
 """
 import os
+import pathlib
 
 import pytest
 from fastapi.testclient import TestClient
 
+import transcoder
 import transcoder.api.app as app_module
 from transcoder.api.app import create_app
 
-_DIST = os.path.join("web", "dist")
+# Resolve solution/web/dist from the package location, not the cwd — the suite
+# now runs from the repo root, where a cwd-relative "web/dist" would never match.
+_DIST = str(pathlib.Path(transcoder.__file__).resolve().parent.parent / "web" / "dist")
 
 
 @pytest.mark.skipif(

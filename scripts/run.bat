@@ -1,7 +1,7 @@
 @echo off
 REM Run: start the FastAPI + worker service standalone (serves the built web UI).
 setlocal
-cd /d "%~dp0..\source_code" || exit /b 1
+cd /d "%~dp0..\solution" || exit /b 1
 
 if not exist ".venv\Scripts\python.exe" (
   echo [run] Virtual environment missing. Run scripts\build.bat first.
