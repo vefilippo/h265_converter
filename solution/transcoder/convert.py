@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import time
+from collections import deque
 
 from transcoder.config import settings
 
@@ -33,6 +34,14 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
         "--all-subtitles",
     ]
 
+    # HandBrake won't create the destination directory; if it's missing it exits
+    # immediately with "avio_open2 failed ... Could not write to indicated output
+    # file" (error 3). OUTPUT_FOLDER defaults to a relative "./out/", which exists
+    # in a dev checkout but not in a fresh install — so create it up front.
+    out_dir = os.path.dirname(output_file)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
     start = time.time()
     log.info("Conversion Started for %s", output_filename)
     # CREATE_NO_WINDOW (Windows only) stops HandBrakeCLI — a console app — from
@@ -45,10 +54,17 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
         creationflags=creationflags,
     )
 
+    # HandBrake's stderr is merged into stdout; keep the last lines so a non-zero
+    # exit can report the actual cause (e.g. "avio_open2 failed ...") instead of a
+    # bare "conversion failed" — most of the stream is progress noise we drop.
+    tail: deque[str] = deque(maxlen=20)
     for line in process.stdout:
         if cancel_event is not None and cancel_event.is_set():
             process.kill()
             raise TranscodeCancelled()
+        stripped = line.rstrip()
+        if stripped:
+            tail.append(stripped)
         pct = parse_handbrake_progress(line)
         if pct is not None and progress_cb is not None:
             try:
@@ -65,7 +81,10 @@ def convert_with_handbrake(input_file, output_filename, preset, progress_cb=None
     # finally block; this function no longer deletes it, to keep a single
     # owner of the file lifecycle.
     if process.returncode != 0:
-        log.error("HandBrake conversion failed. Skipping this file.")
+        log.error(
+            "HandBrake conversion failed (exit %s). Last output:\n%s",
+            process.returncode, "\n".join(tail),
+        )
         return None, False
 
     original_size = os.path.getsize(input_file) / (1024 * 1024)
