@@ -150,7 +150,8 @@ def test_worker_cleans_up_tmp_on_convert_failure(session, monkeypatch):
 
     assert job.state == "failed"
     # the downloaded temp file must be reclaimed even though convert failed
-    assert any(os.path.basename(p) == "a.mkv" for p in removed)
+    # (temp filename is job_<id>.<ext>, not the raw remote basename)
+    assert any(os.path.basename(p).endswith(".mkv") and "tmp" in p for p in removed)
 
 
 def test_process_queue_drains(session, monkeypatch):
@@ -190,6 +191,40 @@ def test_worker_sets_and_clears_phase(session, monkeypatch):
     assert job.phase is None  # cleared on terminal state
     assert job.log and "Downloading" in job.log
     assert "Transcoding" in job.log and "Uploading" in job.log
+
+
+def test_download_tmp_path_safe_for_windows(session, monkeypatch):
+    """Remote filenames with Windows-illegal chars (e.g. ':') must not appear in
+    the local temp path — otherwise sftp.get() raises OSError [Errno 22] on Windows."""
+    monkeypatch.setattr(os.path, "getsize", lambda p: 1000)
+    monkeypatch.setattr(os.path, "exists", lambda p: True)
+    monkeypatch.setattr(os, "remove", lambda p: None)
+    monkeypatch.setattr(os, "makedirs", lambda *a, **k: None)
+
+    # Colon in filename is legal on Linux/NFS but illegal on Windows
+    item = _item(session, remote_path="/TVShows/Show/S02/Show - S02E05 - Part 1: Two.mkv")
+    job = Job(media_item_id=item.id, state="queued")
+    session.add(job)
+    session.commit()
+
+    illegal_chars = set('<>:"/\\|?*')
+    captured = {}
+
+    def download(host, port, user, pw, remote, local, progress_cb=None):
+        captured["local"] = local
+        if progress_cb:
+            progress_cb(100)
+        return {"success": False, "message": "stop early"}  # fail after recording path
+
+    _, _, upload, convert = _make_io()
+    process_one_job(session, job, {"sonarr": FakeClient()},
+                    download=download, upload=upload, convert=convert)
+
+    assert "local" in captured, "download was never called"
+    local_basename = os.path.basename(captured["local"])
+    assert not any(c in local_basename for c in illegal_chars), (
+        f"Local temp path contains Windows-illegal char: {local_basename!r}"
+    )
 
 
 def test_worker_download_failure_marks_failed(session, monkeypatch):
