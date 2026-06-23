@@ -15,6 +15,8 @@ env/
 .env
 .env.local
 .env.*.local
+# Auto-generated session-signing key (created beside the DB when SECRET_KEY is unset)
+secret_key
 
 # Local Claude Code settings (per-machine permissions; not for sharing)
 .claude/settings.local.json

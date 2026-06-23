@@ -48,3 +48,17 @@ def test_setup_password_rejects_blank(api, monkeypatch):
     client, _ = _make_empty(api, monkeypatch)
     r = client.post("/api/setup/password", json={"password": "   "})
     assert r.status_code == 422
+
+
+def test_setup_password_conflicts_when_only_env_password_set(api, monkeypatch):
+    """An install configured purely via env APP_PASSWORD (no DB hash) is already
+    configured — the open endpoint must stay inert (409) for it too, not just
+    when a hash exists."""
+    client, Session = api
+    monkeypatch.setattr(auth.settings, "APP_PASSWORD", "env-pass")
+    with Session() as db:
+        db.query(Setting).filter(Setting.key == "app_password_hash").delete()
+        db.commit()
+    assert client.get("/api/me").json()["needs_setup"] is False
+    r = client.post("/api/setup/password", json={"password": "whatever"})
+    assert r.status_code == 409
