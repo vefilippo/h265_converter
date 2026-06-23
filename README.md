@@ -11,6 +11,7 @@ Automated H.265/HEVC transcoding pipeline for your media library. Integrates wit
 - **Scheduler** — cron-based auto-runs (APScheduler) with a run-at-startup toggle.
 - **Webhook triggers** — Sonarr/Radarr call the app the moment a file is imported, so it's discovered and queued for transcoding instantly instead of waiting for the next scan.
 - **Authentication** — single-password login, bcrypt-hashed and stored in the DB after first login, with a session cookie.
+- **Backup & Restore** — download an encrypted (AES-256-GCM) state backup (DB + .env) from Settings; restore it onto a freshly installed instance to clone it.
 - **Windows tray app** — green/grey health dot, start/stop the server, and toast notifications on job done / failed / queue cleared.
 - **Logging** — daily-rotating files in `log/` with a 30-day archive and a consistent format across all components.
 - **CLI** — headless `scan` / `run` / `queue` commands for scripted use.
