@@ -12,6 +12,21 @@ os.environ.setdefault("HANDBRAKE_CLI", "HandBrakeCLI")
 os.environ.setdefault("APP_PASSWORD", "test-pass")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 
+# Isolate the DB from the developer's real transcoder.db. The old default
+# (sqlite:///transcoder.db, cwd-relative) only worked because pytest ran from
+# source_code/ next to the populated DB; from the repo root that resolves to an
+# empty file and import-time settings reads (api.state) hit "no such table".
+# Point at a throwaway file DB and create the schema so those reads find an
+# (empty) setting table and fall back to the test env defaults above.
+import tempfile
+
+_test_db = os.path.join(tempfile.mkdtemp(prefix="h265_test_"), "test.db")
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_test_db.replace(os.sep, '/')}")
+
+from transcoder.db import init_db  # noqa: E402  (after DATABASE_URL is set)
+
+init_db()
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

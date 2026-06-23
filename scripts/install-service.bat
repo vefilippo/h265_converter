@@ -3,8 +3,8 @@ REM Install: register a scheduled task to start the tray (+ server) at logon.
 REM Runs as the logged-in user so it has GPU + network-share access.
 setlocal
 set TASK=H265Transcoder
-set PYTHONW=%~dp0..\source_code\.venv\Scripts\pythonw.exe
-set TRAY=%~dp0..\source_code\tray.pyw
+set PYTHONW=%~dp0..\solution\.venv\Scripts\pythonw.exe
+set TRAY=%~dp0..\solution\tray.pyw
 
 if not exist "%PYTHONW%" (
   echo [service] ERROR: venv not found at %PYTHONW%

@@ -2,7 +2,7 @@
 REM Clean: remove the Python venv and web build artifacts (node_modules + dist).
 REM Does NOT touch your .env, transcoder.db, or source files.
 setlocal
-cd /d "%~dp0..\source_code" || exit /b 1
+cd /d "%~dp0..\solution" || exit /b 1
 
 echo [clean] This removes .venv, web\node_modules and web\dist.
 choice /m "[clean] Proceed"

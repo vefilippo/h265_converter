@@ -20,9 +20,9 @@ env/
 .claude/settings.local.json
 
 # Runtime state & artifacts
-source_code/tmp/
-source_code/out/
-source_code/log/
+solution/tmp/
+solution/out/
+solution/log/
 log/
 tmp/
 out/
@@ -66,8 +66,14 @@ Thumbs.db
 *.swo
 
 # Frontend
-source_code/web/node_modules/
-source_code/web/dist/
-source_code/web/*.tsbuildinfo
-source_code/web/vite.config.js
-source_code/web/vite.config.d.ts
+solution/web/node_modules/
+solution/web/dist/
+solution/web/*.tsbuildinfo
+solution/web/vite.config.js
+solution/web/vite.config.d.ts
+
+# Windows installer build artifacts (deploy/h265-transcoder/)
+deploy/h265-transcoder/build/
+deploy/h265-transcoder/dist/
+deploy/h265-transcoder/*.spec
+deploy/h265-transcoder/app.ico

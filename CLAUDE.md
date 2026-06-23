@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Setup:**
 ```bash
-cd source_code
+cd solution
 python -m pip install -r requirements.txt
 ```
 
 **Run:**
 ```bash
-cd source_code
+cd solution
 python -m transcoder.cli <command> [app] [scope] [--show "Title"] [--movie "Title"]
 # command: scan | run | queue
 # app: all | sonarr | radarr (default all)
@@ -33,7 +33,7 @@ python -m transcoder.cli queue                      # List job states
 
 **Serve (API, Cycle 2):**
 ```bash
-cd source_code
+cd solution
 python -m transcoder.api        # FastAPI + uvicorn on API_HOST:API_PORT (default 0.0.0.0:8765)
 ```
 Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
@@ -48,20 +48,20 @@ enqueue of just that title; non-`Download` events are ack'd and ignored). A
 continuous background worker drains the job queue automatically while the server
 runs.
 
-**Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `source_code/web/`, served by FastAPI behind a single-password login. Requires `APP_PASSWORD` + `SECRET_KEY` in `.env`.
+**Web UI (Cycle 3):** a React SPA (Vite + Tailwind + shadcn-style primitives) in `solution/web/`, served by FastAPI behind a single-password login. Requires `APP_PASSWORD` + `SECRET_KEY` in `.env`.
 ```bash
 # Dev (hot reload): two processes
-cd source_code && python -m transcoder.api          # API on :8765
-cd source_code/web && npm install && npm run dev     # UI on :5173, proxies /api -> :8765
+cd solution && python -m transcoder.api          # API on :8765
+cd solution/web && npm install && npm run dev     # UI on :5173, proxies /api -> :8765
 # Prod: build once, FastAPI serves UI + API on :8765
-cd source_code/web && npm run build                  # -> web/dist
-cd source_code && python -m transcoder.api           # open http://<host>:8765, log in
+cd solution/web && npm run build                  # -> web/dist
+cd solution && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, and a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use). Frontend tests: `cd source_code/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, and a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use). Frontend tests: `cd solution/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 
-**Windows batch shortcut:** `source_code/run.bat`
+**Windows batch shortcut:** `solution/run.bat`
 
 ## Testing
 
@@ -69,9 +69,10 @@ Use TDD: write or update tests describing the desired behavior **before** writin
 implementation, then code until green. Run the full suite before committing — don't
 declare a fix or feature done until tests are green.
 
-- **Backend (pytest):** `cd source_code && python -m pytest` (config in `pytest.ini`;
-  tests live in `source_code/tests/`, named `test_*.py`).
-- **Frontend (Vitest):** `cd source_code/web && npm test`. This runs `tsc -b`
+- **Backend (pytest):** `python -m pytest` from the repo root (config in `pytest.ini`,
+  which sets `pythonpath = solution`; tests live in `tests/` plus the installer
+  helper tests in `deploy/h265-transcoder/tests/`, named `test_*.py`).
+- **Frontend (Vitest):** `cd solution/web && npm test`. This runs `tsc -b`
   (typecheck) before Vitest, so type errors fail the suite — Vitest alone does not
   typecheck, and the production build (`npm run build`) runs the same `tsc -b`. Use
   `npm run typecheck` to typecheck without running tests.
@@ -118,7 +119,7 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 
 **Flow:** Sonarr/Radarr API → `discovery` upserts `media_item` rows (eligibility = needs_transcode if non-H.265 ≥1080p) → `queue` creates `job` rows → `worker` drains jobs one at a time: SFTP download → HandBrakeCLI (with live progress) → if smaller: SFTP upload + manual import trigger; if larger: add `exclusion` row
 
-**Key modules (`source_code/transcoder/`):**
+**Key modules (`solution/transcoder/`):**
 - `cli.py` — thin entry point; `build_parser()` + `main()` dispatch the `scan`/`run`/`queue` commands
 - `config.py` — pydantic-settings loaded from `.env` (gitignored; see `.env.example`)
 - `db.py` — SQLAlchemy engine/session/`Base`/`init_db`/`backup_db` (copies `transcoder.db` → `.db.bak` before migrations)
@@ -138,10 +139,27 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `logging_setup.py` — leveled logging to console + rotating file (`log/api.log` for the server, `log/cli.log` for the CLI; 5 MB / 3 backups)
 - `tray.pyw` — Windows system tray launcher (pystray + Pillow): green/grey health icon, start/stop/open-UI menu, toast notifications on job done/failed/queue-clear (winotify); run via `scripts/tray.bat`
 
-**State** lives in a SQLite database (`source_code/transcoder.db`): `media_item`, `job`,
+**State** lives in a SQLite database (`solution/transcoder.db`): `media_item`, `job`,
 `exclusion`, `setting` tables. Legacy `excluded_*.csv` / `last_history_timestamp.txt` are
-auto-imported on first run and renamed `*.migrated`. Config is loaded from `source_code/.env`
+auto-imported on first run and renamed `*.migrated`. Config is loaded from `solution/.env`
 (see `.env.example`); the old hardcoded `config.py` is gitignored.
+
+**Repo layout (`solution-deploy-layout`):** `solution/` is the shippable build
+context (the app — package, web, tray, deps manifest) and the *only* thing the
+installer bundles. `deploy/h265-transcoder/` holds the Windows-installer toolchain;
+tests (`tests/`, `deploy/h265-transcoder/tests/`) and docs live outside `solution/`.
+`pytest.ini` at the repo root sets `pythonpath = solution`, so run `python -m pytest`
+from the root (not `cd solution`). The app reads a cwd-relative `transcoder.db`, so
+it must be launched with cwd = `solution/` (the scripts and `tray.pyw` already do this).
+
+**Deploy (Windows installer):** the app runs natively (HandBrake NVENC on the GPU,
+in the user's session), so it ships as a self-contained `*-setup.exe`, not a
+container. `build-host-setup.bat` (root) → `deploy/h265-transcoder/build.bat` stages
+the payload from `git ls-files -- solution` (whitelist — secrets are gitignored so
+they can't leak), builds the web UI, generates an icon, and freezes `host_setup.py`
+with PyInstaller (`--onefile --windowed --uac-admin`). `installer_lib.py` holds the
+pure, unit-tested helpers; `host_setup.py` is the live GUI/subprocess/registry I/O
+(also `--uninstall`). See `deploy/h265-transcoder/README.md`.
 
 ## External Dependencies
 

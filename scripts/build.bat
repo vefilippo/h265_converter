@@ -1,7 +1,7 @@
 @echo off
 REM Build: create the Python venv, install backend deps, install + build the web UI.
 setlocal
-cd /d "%~dp0..\source_code" || exit /b 1
+cd /d "%~dp0..\solution" || exit /b 1
 
 if not exist ".venv\pyvenv.cfg" (
   echo [build] Creating virtual environment...
@@ -38,6 +38,6 @@ call npm run build || (popd & exit /b 1)
 popd
 
 echo.
-echo [build] Done. Copy source_code\.env.example to source_code\.env and fill it in,
+echo [build] Done. Copy solution\.env.example to solution\.env and fill it in,
 echo         then run scripts\run.bat to start the service.
 endlocal
