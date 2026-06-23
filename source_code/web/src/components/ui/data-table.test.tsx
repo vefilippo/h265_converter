@@ -39,6 +39,38 @@ test("select-all selects only selectable rows", () => {
   expect(last.map((r) => r.id).sort()).toEqual([1, 3]);
 });
 
+const DATA5: Row[] = [
+  { id: 1, name: "a", locked: false },
+  { id: 2, name: "b", locked: false },
+  { id: 3, name: "c", locked: true },
+  { id: 4, name: "d", locked: false },
+  { id: 5, name: "e", locked: false },
+];
+
+test("shift-click selects the range between anchor and target, skipping non-selectable rows", () => {
+  const onSelectionChange = vi.fn();
+  render(
+    <DataTable
+      columns={COLS}
+      data={DATA5}
+      getRowId={(r) => String(r.id)}
+      enableSelection
+      isRowSelectable={(r) => !r.locked}
+      onSelectionChange={onSelectionChange}
+    />,
+  );
+
+  // Row checkboxes render in data order (no sorting): indices 0..4 -> ids 1..5.
+  const rowBoxes = screen.getAllByLabelText("Select row");
+  fireEvent.click(rowBoxes[0]); // anchor = id 1
+  fireEvent.click(rowBoxes[3], { shiftKey: true }); // shift-click id 4
+
+  const calls = onSelectionChange.mock.calls;
+  const last = calls[calls.length - 1]?.[0] as Row[];
+  // Range 1..4 inclusive, with id 3 locked (skipped) => 1, 2, 4.
+  expect(last.map((r) => r.id).sort()).toEqual([1, 2, 4]);
+});
+
 test("locked row checkbox is disabled", () => {
   render(
     <DataTable

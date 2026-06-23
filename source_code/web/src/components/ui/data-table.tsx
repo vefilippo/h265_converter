@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   type ColumnDef,
+  type Row,
+  type Table as TanstackTable,
   type SortingState,
   type RowSelectionState,
   flexRender,
@@ -57,33 +59,80 @@ export function DataTable<T>({
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const selectionColumn: ColumnDef<T, unknown> = {
-    id: "__select__",
-    enableSorting: false,
-    header: ({ table }) => (
-      <input
-        type="checkbox"
-        aria-label="Select all"
-        checked={table.getIsAllRowsSelected()}
-        ref={(el) => {
-          if (el) el.indeterminate = table.getIsSomeRowsSelected();
-        }}
-        onChange={table.getToggleAllRowsSelectedHandler()}
-      />
-    ),
-    cell: ({ row }) => (
-      <input
-        type="checkbox"
-        aria-label="Select row"
-        checked={row.getIsSelected()}
-        disabled={!row.getCanSelect()}
-        onChange={row.getToggleSelectedHandler()}
-        onClick={(e) => e.stopPropagation()}
-      />
-    ),
-  };
+  // Shift-click range selection: `anchorRef` remembers the last row whose
+  // checkbox was clicked; `shiftHeldRef` is set from the click event (which
+  // carries `shiftKey`) just before the change handler runs. Both are refs so
+  // the selection column can be memoized (a stable column identity is required —
+  // recreating it each render makes TanStack remount the cells).
+  const anchorRef = useRef<string | null>(null);
+  const shiftHeldRef = useRef(false);
 
-  const allColumns = enableSelection ? [selectionColumn, ...columns] : columns;
+  // Reads the live table from the cell render context (never a stale closure).
+  const handleRowToggle = useCallback((tbl: TanstackTable<T>, row: Row<T>) => {
+    const rows = tbl.getRowModel().rows;
+    const anchorId = anchorRef.current;
+    const anchorIdx = anchorId ? rows.findIndex((r) => r.id === anchorId) : -1;
+
+    if (shiftHeldRef.current && anchorIdx !== -1 && anchorId !== row.id) {
+      const curIdx = rows.findIndex((r) => r.id === row.id);
+      const [lo, hi] = anchorIdx < curIdx ? [anchorIdx, curIdx] : [curIdx, anchorIdx];
+      // Apply the clicked row's resulting state to every selectable row in the
+      // visible range (inclusive); non-selectable rows are left untouched.
+      const newValue = !row.getIsSelected();
+      tbl.setRowSelection((prev) => {
+        const next = { ...prev };
+        for (let i = lo; i <= hi; i++) {
+          const r = rows[i];
+          if (!r.getCanSelect()) continue;
+          if (newValue) next[r.id] = true;
+          else delete next[r.id];
+        }
+        return next;
+      });
+    } else {
+      row.toggleSelected();
+    }
+    anchorRef.current = row.id;
+  }, []);
+
+  const selectionColumn = useMemo<ColumnDef<T, unknown>>(
+    () => ({
+      id: "__select__",
+      enableSorting: false,
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          aria-label="Select all"
+          checked={table.getIsAllRowsSelected()}
+          ref={(el) => {
+            if (el) el.indeterminate = table.getIsSomeRowsSelected();
+          }}
+          onChange={table.getToggleAllRowsSelectedHandler()}
+        />
+      ),
+      cell: ({ row, table }) => (
+        <input
+          type="checkbox"
+          aria-label="Select row"
+          checked={row.getIsSelected()}
+          disabled={!row.getCanSelect()}
+          onChange={() => handleRowToggle(table, row)}
+          // `onClick` fires before `onChange` and carries `shiftKey`; stash it so
+          // the change handler can decide whether to do a range selection.
+          onClick={(e) => {
+            e.stopPropagation();
+            shiftHeldRef.current = e.shiftKey;
+          }}
+        />
+      ),
+    }),
+    [handleRowToggle],
+  );
+
+  const allColumns = useMemo(
+    () => (enableSelection ? [selectionColumn, ...columns] : columns),
+    [enableSelection, selectionColumn, columns],
+  );
 
   const table = useReactTable({
     data,
