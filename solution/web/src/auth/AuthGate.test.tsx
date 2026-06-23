@@ -24,3 +24,11 @@ test("shows children when authenticated", async () => {
   wrap(<AuthGate><div>SECRET CONTENT</div></AuthGate>);
   expect(await screen.findByText("SECRET CONTENT")).toBeInTheDocument();
 });
+
+test("shows setup wizard when needs_setup", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () =>
+    new Response(JSON.stringify({ authed: false, needs_setup: true }), { status: 200 })));
+  wrap(<AuthGate><div>SECRET CONTENT</div></AuthGate>);
+  expect(await screen.findByRole("heading", { name: /set up/i })).toBeInTheDocument();
+  expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
+});
