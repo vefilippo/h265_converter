@@ -9,9 +9,11 @@ export default function BackupRestoreCard() {
   const [restorePass, setRestorePass] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   async function onDownload() {
     setStatus('');
+    setDownloading(true);
     try {
       const blob = await downloadBackup(backupPass);
       const url = URL.createObjectURL(blob);
@@ -23,6 +25,8 @@ export default function BackupRestoreCard() {
       URL.revokeObjectURL(url);
     } catch (e) {
       setStatus(`Backup failed: ${(e as Error).message}`);
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -48,7 +52,7 @@ export default function BackupRestoreCard() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
-        <h2 className="font-display text-lg text-fg">Backup &amp; Restore</h2>
+        <h2 id="backup-heading" className="font-display text-lg text-fg">Backup &amp; Restore</h2>
       </CardHeader>
       <CardContent className="space-y-4 pt-5">
         <div className="space-y-2">
@@ -61,7 +65,7 @@ export default function BackupRestoreCard() {
             value={backupPass}
             onChange={(e) => setBackupPass(e.target.value)}
           />
-          <Button onClick={onDownload} disabled={!backupPass}>Download backup</Button>
+          <Button onClick={onDownload} disabled={!backupPass || downloading}>Download backup</Button>
         </div>
         <div className="space-y-2 border-t pt-4">
           <p className="text-xs text-red-500">
