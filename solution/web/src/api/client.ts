@@ -52,7 +52,11 @@ export async function downloadBackup(passphrase: string): Promise<Blob> {
     body: JSON.stringify({ passphrase }),
     credentials: 'same-origin',
   });
-  if (!res.ok) throw new ApiError(res.status, 'backup failed');
+  if (!res.ok) {
+    let detail = 'backup failed';
+    try { const j = await res.json(); detail = j?.detail ?? detail; } catch { /* non-JSON error body */ }
+    throw new ApiError(res.status, detail);
+  }
   return res.blob();
 }
 

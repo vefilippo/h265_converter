@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { api, ApiError } from "./client";
+import { api, ApiError, downloadBackup, restoreBackup } from "./client";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,8 +24,6 @@ test("204 returns undefined", async () => {
   const r = await api.del("/api/exclusions/1");
   expect(r).toBeUndefined();
 });
-
-import { downloadBackup, restoreBackup } from './client';
 
 describe('backup/restore', () => {
   it('downloadBackup POSTs passphrase and returns a blob', async () => {
