@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useActions, useJobs, useJobLogs } from "../hooks/queries";
@@ -118,6 +118,11 @@ export default function Jobs() {
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [selected, setSelected] = useState<Job[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Reset selection when the filter changes: keying the DataTable below on the
+  // filter remounts it so its internal checkbox state clears, and this clears
+  // the page-level selection array so the bulk bar can't act on now-hidden jobs.
+  useEffect(() => setSelected([]), [stateFilter]);
 
   const { data, isLoading } = useJobs(stateFilter || undefined);
   const { data: allData } = useJobs(undefined); // all jobs for count badges
@@ -309,6 +314,7 @@ export default function Jobs() {
       {!isLoading && jobs.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden">
           <DataTable
+            key={stateFilter}
             columns={columns}
             data={jobs}
             getRowId={(job) => String(job.id)}
