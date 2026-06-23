@@ -33,3 +33,16 @@ def test_empty_env_text_skips_env_write(tmp_path):
     restore.apply_pending_restore(str(tmp_path), str(db), str(env))
     assert db.read_bytes() == b"NEW"
     assert env.read_text(encoding="utf-8") == "KEEP=1\n"  # unchanged when backup had no env
+
+
+def test_apply_noop_when_pending_dir_present_but_no_marker(tmp_path):
+    db = tmp_path / "transcoder.db"; env = tmp_path / ".env"
+    db.write_bytes(b"OLD"); env.write_text("OLD=1\n", encoding="utf-8")
+    # Pending dir with staged files but NO marker (a half-staged crash).
+    pend = tmp_path / restore.PENDING_DIR
+    pend.mkdir()
+    (pend / "transcoder.db").write_bytes(b"NEW")
+    (pend / "env.txt").write_text("NEW=2\n", encoding="utf-8")
+    assert restore.apply_pending_restore(str(tmp_path), str(db), str(env)) is False
+    assert db.read_bytes() == b"OLD"  # nothing applied without the marker
+    assert env.read_text(encoding="utf-8") == "OLD=1\n"

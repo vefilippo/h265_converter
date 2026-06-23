@@ -29,6 +29,8 @@ def apply_pending_restore(base_dir: str, db_path: str, env_path: str) -> bool:
     os.replace(incoming, db_path)
     env_text = (pend / "env.txt").read_text(encoding="utf-8")
     if env_text:  # empty means the backup carried no .env — leave existing one
-        Path(env_path).write_text(env_text, encoding="utf-8")
+        env_incoming = str(env_path) + ".incoming"
+        Path(env_incoming).write_text(env_text, encoding="utf-8")
+        os.replace(env_incoming, env_path)
     shutil.rmtree(pend)
     return True
