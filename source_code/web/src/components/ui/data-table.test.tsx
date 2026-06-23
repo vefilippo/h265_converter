@@ -34,7 +34,8 @@ test("select-all selects only selectable rows", () => {
   const header = boxes[0];
   fireEvent.click(header);
 
-  const last = onSelectionChange.mock.calls.at(-1)?.[0] as Row[];
+  const calls = onSelectionChange.mock.calls;
+  const last = calls[calls.length - 1]?.[0] as Row[];
   expect(last.map((r) => r.id).sort()).toEqual([1, 3]);
 });
 
