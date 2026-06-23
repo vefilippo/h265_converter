@@ -4,7 +4,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import socket
 from pathlib import Path
 
@@ -52,20 +51,29 @@ def _port_free(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _waiter_script(python_exe: str, package_dir: str, port: int) -> str:
+    """Generate a detached waiter script using repr() for robust path serialization.
+
+    repr() yields valid Python string literals for any path (quotes, backslashes),
+    so the generated source cannot be broken by special characters in the path values.
+    """
+    return (
+        "import socket,time,subprocess,sys\n"
+        "for _ in range(60):\n"
+        "    s=socket.socket()\n"
+        f"    free=s.connect_ex(('127.0.0.1',{port}))!=0\n"
+        "    s.close()\n"
+        "    if free: break\n"
+        "    time.sleep(0.5)\n"
+        f"subprocess.Popen([{python_exe!r},'-m','transcoder.api'], cwd={package_dir!r})\n"
+    )
+
+
 def schedule_relaunch(python_exe: str | None = None, package_dir: str | None = None,
                       port: int = 8765) -> None:
     """Spawn a detached process that waits for the port to free, then restarts
     the API. Survives this process exiting. Best-effort; not unit-tested."""
     python_exe = python_exe or sys.executable
-    package_dir = package_dir or str(__import__("pathlib").Path(__file__).resolve().parent.parent)
-    waiter = (
-        "import socket,time,subprocess,sys\n"
-        f"for _ in range(60):\n"
-        f"    s=socket.socket()\n"
-        f"    free=s.connect_ex(('127.0.0.1',{port}))!=0\n"
-        f"    s.close()\n"
-        f"    if free: break\n"
-        f"    time.sleep(0.5)\n"
-        f"subprocess.Popen([r'{python_exe}','-m','transcoder.api'], cwd=r'{package_dir}')\n"
-    )
+    package_dir = package_dir or str(Path(__file__).resolve().parent.parent)
+    waiter = _waiter_script(python_exe, package_dir, port)
     subprocess.Popen([python_exe, "-c", waiter], creationflags=_DETACHED)
