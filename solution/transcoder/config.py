@@ -6,19 +6,20 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # --- Required (secrets / endpoints) come from .env ---
-    # SFTP fields are prefixed to avoid collision with Windows system env vars
-    # (USERNAME/HOSTNAME), which os.environ would let shadow the .env values.
-    SONARR_URL: str
-    SONARR_API_KEY: str
-    RADARR_URL: str
-    RADARR_API_KEY: str
-    SFTP_HOST: str
-    SFTP_USERNAME: str
-    SFTP_PASSWORD: str
-    HANDBRAKE_CLI: str
-    APP_PASSWORD: str
-    SECRET_KEY: str
+    # --- Connections / secrets: optional so an unconfigured install still boots.
+    # Values are configured at runtime via the setup wizard / Settings page and
+    # read through get_effective(db, key, settings.X); env is only a fallback.
+    # SFTP_* are prefixed to avoid collision with Windows USERNAME/HOSTNAME.
+    SONARR_URL: str = ""
+    SONARR_API_KEY: str = ""
+    RADARR_URL: str = ""
+    RADARR_API_KEY: str = ""
+    SFTP_HOST: str = ""
+    SFTP_USERNAME: str = ""
+    SFTP_PASSWORD: str = ""
+    HANDBRAKE_CLI: str = ""
+    APP_PASSWORD: str = ""
+    SECRET_KEY: str = ""
 
     # --- Defaults (overridable via .env) ---
     SFTP_PORT: int = 22
