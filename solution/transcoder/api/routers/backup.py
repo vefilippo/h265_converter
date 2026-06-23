@@ -40,6 +40,9 @@ def create_backup(body: BackupRequest):
 
 @router.post("/restore", status_code=202, dependencies=[Depends(require_auth)])
 async def restore_backup(file: UploadFile = File(...), passphrase: str = Form(...)):
+    _MAX_UPLOAD = 1024 * 1024 * 1024  # 1 GiB
+    if file.size is not None and file.size > _MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="backup file too large")
     zip_bytes = await file.read()
     try:
         db_bytes, env_text, _manifest = read_backup(zip_bytes, passphrase)
@@ -47,5 +50,5 @@ async def restore_backup(file: UploadFile = File(...), passphrase: str = Form(..
         raise HTTPException(status_code=400, detail="wrong passphrase or corrupt backup")
     db_path = db_path_from_url(settings.DATABASE_URL)
     stage_restore(db_bytes, env_text, _base_dir(db_path))
-    schedule_relaunch()
+    schedule_relaunch(port=settings.API_PORT)
     return {"status": "restarting"}

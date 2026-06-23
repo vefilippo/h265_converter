@@ -46,3 +46,15 @@ def test_apply_noop_when_pending_dir_present_but_no_marker(tmp_path):
     assert restore.apply_pending_restore(str(tmp_path), str(db), str(env)) is False
     assert db.read_bytes() == b"OLD"  # nothing applied without the marker
     assert env.read_text(encoding="utf-8") == "OLD=1\n"
+
+
+def test_apply_removes_stale_wal_sidecars(tmp_path):
+    db = tmp_path / "transcoder.db"; env = tmp_path / ".env"
+    db.write_bytes(b"OLD"); env.write_text("OLD=1\n", encoding="utf-8")
+    (tmp_path / "transcoder.db-wal").write_bytes(b"stale-wal")
+    (tmp_path / "transcoder.db-shm").write_bytes(b"stale-shm")
+    restore.stage_restore(b"NEW", "NEW=2\n", str(tmp_path))
+    assert restore.apply_pending_restore(str(tmp_path), str(db), str(env)) is True
+    assert db.read_bytes() == b"NEW"
+    assert not (tmp_path / "transcoder.db-wal").exists()
+    assert not (tmp_path / "transcoder.db-shm").exists()

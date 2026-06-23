@@ -30,6 +30,14 @@ def apply_pending_restore(base_dir: str, db_path: str, env_path: str) -> bool:
     incoming = str(db_path) + ".incoming"
     shutil.copyfile(pend / "transcoder.db", incoming)
     os.replace(incoming, db_path)
+    # The snapshot is a fully-checkpointed standalone DB; drop any stale WAL
+    # sidecars from the previous instance so SQLite can't replay old frames
+    # against the freshly restored DB.
+    for _sidecar in (str(db_path) + "-wal", str(db_path) + "-shm"):
+        try:
+            os.remove(_sidecar)
+        except FileNotFoundError:
+            pass
     env_text = (pend / "env.txt").read_text(encoding="utf-8")
     if env_text:  # empty means the backup carried no .env — leave existing one
         env_incoming = str(env_path) + ".incoming"
