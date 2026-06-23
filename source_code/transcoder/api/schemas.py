@@ -67,6 +67,15 @@ class JobLogOut(BaseModel):
     log: str
 
 
+class JobDeleteIn(BaseModel):
+    ids: list[int]
+
+
+class JobDeleteOut(BaseModel):
+    deleted: int
+    skipped: int
+
+
 class EnqueueIn(BaseModel):
     source: str | None = None
 

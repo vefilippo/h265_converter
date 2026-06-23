@@ -3,13 +3,16 @@ from sqlalchemy.orm import Session, joinedload
 
 from transcoder.api.deps import get_session
 from transcoder.api import state
-from transcoder.api.schemas import EnqueueIn, EnqueueOut, JobLogOut, JobOut, JobPage
+from transcoder.api.schemas import (
+    EnqueueIn, EnqueueOut, JobDeleteIn, JobDeleteOut, JobLogOut, JobOut, JobPage,
+)
 from transcoder.engine.queue import enqueue_eligible
 from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 
 router = APIRouter(prefix="/api")
 
 _RETRYABLE = {"failed", "skipped_larger", "cancelled"}
+_DELETABLE = {"done", "failed", "skipped_larger", "cancelled"}
 
 
 def _to_out(job: Job) -> JobOut:
@@ -49,6 +52,21 @@ def list_jobs(
     total = q.count()
     rows = q.order_by(Job.id).limit(limit).offset(offset).all()
     return JobPage(total=total, items=[_to_out(j) for j in rows])
+
+
+@router.post("/jobs/delete", response_model=JobDeleteOut)
+def delete_jobs(body: JobDeleteIn, session: Session = Depends(get_session)):
+    deleted = 0
+    skipped = 0
+    for job_id in body.ids:
+        job = session.get(Job, job_id)
+        if job is not None and job.state in _DELETABLE:
+            session.delete(job)
+            deleted += 1
+        else:
+            skipped += 1
+    session.commit()
+    return JobDeleteOut(deleted=deleted, skipped=skipped)
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)

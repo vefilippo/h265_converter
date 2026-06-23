@@ -186,3 +186,51 @@ def test_job_logs_endpoint_returns_log(api):
 def test_job_logs_endpoint_404(api):
     client, _ = api
     assert client.get("/api/jobs/999/logs").status_code == 404
+
+
+def test_delete_terminal_jobs(api):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add_all([
+        Job(media_item_id=iid, state="done"),
+        Job(media_item_id=iid, state="failed"),
+        Job(media_item_id=iid, state="skipped_larger"),
+        Job(media_item_id=iid, state="cancelled"),
+    ])
+    s.commit()
+    ids = [j.id for j in s.query(Job).all()]
+    s.close()
+
+    r = client.post("/api/jobs/delete", json={"ids": ids})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 4, "skipped": 0}
+
+    s = Session()
+    assert s.query(Job).count() == 0
+    s.close()
+
+
+def test_delete_skips_active_and_missing(api):
+    client, Session = api
+    iid = _seed_item(Session)
+    s = Session()
+    s.add_all([
+        Job(media_item_id=iid, state="queued"),
+        Job(media_item_id=iid, state="running"),
+        Job(media_item_id=iid, state="done"),
+    ])
+    s.commit()
+    by_state = {j.state: j.id for j in s.query(Job).all()}
+    s.close()
+
+    # queued + running skipped, done deleted, id 99999 missing -> skipped
+    ids = [by_state["queued"], by_state["running"], by_state["done"], 99999]
+    r = client.post("/api/jobs/delete", json={"ids": ids})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": 1, "skipped": 3}
+
+    s = Session()
+    remaining = {j.state for j in s.query(Job).all()}
+    assert remaining == {"queued", "running"}
+    s.close()

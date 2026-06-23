@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   type ColumnDef,
   type SortingState,
+  type RowSelectionState,
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
@@ -27,6 +29,12 @@ interface DataTableProps<T> {
   rowClassName?: (row: T) => string | undefined;
   /** Stable React key for each row. */
   getRowId?: (row: T) => string;
+  /** When set, renders a leading checkbox column for row selection. */
+  enableSelection?: boolean;
+  /** Which rows may be selected (defaults to all). */
+  isRowSelectable?: (row: T) => boolean;
+  /** Called with the currently-selected row objects whenever selection changes. */
+  onSelectionChange?: (rows: T[]) => void;
 }
 
 function ariaSort(dir: false | "asc" | "desc"): "ascending" | "descending" | "none" {
@@ -42,18 +50,73 @@ export function DataTable<T>({
   onRowClick,
   rowClassName,
   getRowId,
+  enableSelection = false,
+  isRowSelectable,
+  onSelectionChange,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  const selectionColumn: ColumnDef<T, unknown> = {
+    id: "__select__",
+    enableSorting: false,
+    header: ({ table }) => (
+      <input
+        type="checkbox"
+        aria-label="Select all"
+        checked={table.getIsAllRowsSelected()}
+        ref={(el) => {
+          if (el) el.indeterminate = table.getIsSomeRowsSelected();
+        }}
+        onChange={table.getToggleAllRowsSelectedHandler()}
+      />
+    ),
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        aria-label="Select row"
+        checked={row.getIsSelected()}
+        disabled={!row.getCanSelect()}
+        onChange={row.getToggleSelectedHandler()}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ),
+  };
+
+  const allColumns = enableSelection ? [selectionColumn, ...columns] : columns;
 
   const table = useReactTable({
     data,
-    columns,
-    state: { sorting },
+    columns: allColumns,
+    state: { sorting, rowSelection },
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: enableSelection
+      ? (row) => (isRowSelectable ? isRowSelectable(row.original) : true)
+      : false,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getRowId: getRowId ? (row) => getRowId(row) : undefined,
   });
+
+  // Skip the initial mount call when nothing is selected — calling the parent
+  // setter with [] on every mount causes an extra re-render with no semantic
+  // change. We fire once `rowSelection` has actually changed from its initial {}.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!onSelectionChange) return;
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      // Only skip if starting with an empty selection (the common case).
+      if (Object.keys(rowSelection).length === 0) return;
+    }
+    onSelectionChange(table.getSelectedRowModel().rows.map((r) => r.original));
+    // `rowSelection` is the reactive state; `table` is recreated each render but its
+    // selectedRowModel is fully derived from `rowSelection`, so excluding `table`
+    // from deps is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowSelection, onSelectionChange]);
 
   return (
     <Table>

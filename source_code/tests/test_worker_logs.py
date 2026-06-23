@@ -26,7 +26,7 @@ def test_worker_logs_transitions(session, monkeypatch):
         class FakeClient:
             def manual_import_one(self, p): pass
 
-        def convert(tmp, out, preset, progress_cb=None, cancel_event=None):
+        def convert(tmp, out, preset, progress_cb=None, cancel_event=None, handbrake_cli=None):
             return ("./out/" + out, False)
 
         process_one_job(session, job, {"sonarr": FakeClient()},

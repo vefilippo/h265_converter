@@ -29,6 +29,11 @@ function makeFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
+    if (url.includes("/api/jobs/delete")) {
+      return new Response(JSON.stringify({ deleted: 1, skipped: 0 }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/api/jobs/1/cancel")) {
       return new Response(JSON.stringify(ITEMS[0]), {
         status: 200,
@@ -187,4 +192,46 @@ test("opening details shows the job log", async () => {
   const movieRow = rows.find((r) => r.textContent?.includes("Movie X"));
   fireEvent.click(within(movieRow!).getByRole("button", { name: /details/i }));
   expect(await screen.findByText("hello log")).toBeInTheDocument();
+});
+
+test("bulk-deletes selected terminal jobs", async () => {
+  const fetchMock = makeFetch();
+  vi.stubGlobal("fetch", fetchMock);
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  // wait for rows to render
+  await screen.findByText("Movie X");
+
+  // select the failed job (id 2). Row checkboxes have aria-label "Select row";
+  // the running job (id 1) checkbox is disabled.
+  const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+  const enabled = boxes.filter((b) => !b.disabled && b.getAttribute("aria-label") === "Select row");
+  fireEvent.click(enabled[0]);
+
+  // bulk bar Delete button appears (only one Delete button before dialog opens)
+  const del = await screen.findByRole("button", { name: /delete/i });
+  fireEvent.click(del);
+
+  // confirm in dialog — scope to the dialog element to avoid ambiguity with
+  // the bulk-bar Delete button that is still rendered behind the dialog
+  const dialog = await screen.findByRole("dialog");
+  const confirm = within(dialog).getByRole("button", { name: /^delete$/i });
+  fireEvent.click(confirm);
+
+  await waitFor(() => {
+    const called = fetchMock.mock.calls.some(
+      ([u, init]) =>
+        String(u).includes("/api/jobs/delete") &&
+        init?.body != null &&
+        JSON.parse(init.body as string).ids.includes(2),
+    );
+    expect(called).toBe(true);
+  });
 });
