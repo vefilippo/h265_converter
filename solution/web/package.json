@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vitest run src/changelog/verify.test.ts && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
+    "verify:changelog": "vitest run src/changelog/verify.test.ts",
     "test": "tsc -b && vitest run"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^26.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
