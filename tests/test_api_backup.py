@@ -54,3 +54,26 @@ def test_restore_wrong_passphrase_400(api, tmp_path, monkeypatch):
     r = client.post("/api/restore", files={"file": ("b.zip", blob, "application/zip")},
                     data={"passphrase": "wrong"})
     assert r.status_code == 400
+
+
+def test_backup_manifest_carries_real_version(api, tmp_path, monkeypatch):
+    import json
+    import transcoder.config as cfg
+    import transcoder.api.routers.backup as backup_router
+    import transcoder.version as version_mod
+
+    client, _ = api
+    db = tmp_path / "transcoder.db"; env = tmp_path / ".env"
+    sqlite3.connect(str(db)).close()
+    env.write_text("X=1\n", encoding="utf-8")
+    monkeypatch.setattr(cfg.settings, "DATABASE_URL", f"sqlite:///{db}")
+    monkeypatch.setattr(backup_router, "ENV_PATH", str(env))
+    monkeypatch.setattr(version_mod, "_VERSION_PATH", tmp_path / "VERSION")
+    (tmp_path / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+
+    r = client.post("/api/backup", json={"passphrase": "pw"})
+    assert r.status_code == 200
+    manifest = json.loads(
+        zipfile.ZipFile(io.BytesIO(r.content)).read("manifest.json")
+    )
+    assert manifest["app_version"] == "9.9.9"

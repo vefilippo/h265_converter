@@ -10,6 +10,7 @@ from transcoder.api.auth import require_auth
 from transcoder.config import settings
 from transcoder.backup import make_backup, read_backup, db_path_from_url
 from transcoder.restore import stage_restore, schedule_relaunch
+from transcoder.version import read_version
 
 router = APIRouter(prefix="/api", tags=["backup"])
 
@@ -30,7 +31,7 @@ def _base_dir(db_path: str) -> str:
 def create_backup(body: BackupRequest):
     db_path = db_path_from_url(settings.DATABASE_URL)
     try:
-        blob = make_backup(db_path, ENV_PATH, body.passphrase)
+        blob = make_backup(db_path, ENV_PATH, body.passphrase, app_version=read_version())
     except Exception as exc:  # snapshot/encrypt failure
         raise HTTPException(status_code=500, detail=f"backup failed: {exc}")
     name = "h265-backup-" + datetime.now(timezone.utc).strftime("%Y%m%d") + ".zip"
