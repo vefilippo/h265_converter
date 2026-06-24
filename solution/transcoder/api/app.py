@@ -99,6 +99,8 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(auth_router)
     from transcoder.api.routers import webhook
     app.include_router(webhook.router)
+    from transcoder.api.routers import meta
+    app.include_router(meta.router)
 
     # Protected API routers.
     from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs, backup
