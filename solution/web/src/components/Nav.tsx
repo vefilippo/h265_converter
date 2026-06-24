@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import { Button } from "./ui/button";
 import { useStatus } from "../hooks/queries";
+import { VersionBadge } from "./VersionBadge";
 
 const navLinks = [
   { to: "/", label: "Dashboard" },
@@ -65,6 +66,10 @@ export function Nav() {
           </span>
         </div>
       )}
+
+      <div className="px-4 py-2 border-t border-border">
+        <VersionBadge />
+      </div>
 
       <div className="p-3 border-t border-border">
         <Button
