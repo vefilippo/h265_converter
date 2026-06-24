@@ -45,6 +45,13 @@ export const useExclusions = () =>
 export const useScanStatus = () =>
   useQuery({ queryKey: ["scanStatus"], queryFn: () => api.get<ScanStatus>("/api/scan/status"), refetchInterval: 3000 });
 
+export const useVersion = () =>
+  useQuery({
+    queryKey: ["version"],
+    queryFn: () => api.get<{ version: string }>("/api/version"),
+    staleTime: Infinity,
+  });
+
 export const useLogs = (after: number) =>
   useQuery({
     queryKey: ["logs", after],

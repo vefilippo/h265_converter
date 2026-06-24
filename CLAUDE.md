@@ -97,6 +97,27 @@ Standard end-to-end flow when shipping a feature or fix:
 Never bypass hooks (`--no-verify`) or signing unless explicitly asked. The `/ship` skill
 codifies this flow.
 
+## Release checklist
+
+Cutting a release moves these files together, in order (the `cut-release` skill
+follows this verbatim):
+
+1. `solution/web/src/changelog/data.ts` — prepend the new version object (newest
+   first): `{ version, date (ISO, today), labelKey, entryKeys: [...] }`. Entries are
+   i18n keys, never literal strings.
+2. `solution/web/src/changelog/strings.ts` — add the label key + every entry key for
+   the new version in **every** locale (currently `en` only).
+3. `solution/web/src/changelog/draft.ts` — reset `entryKeys` to `[]`; bump
+   `currentVersion` to the new version and `nextVersion` to the one after.
+4. `solution/VERSION` — bump to the new version. Must equal `data[0].version`.
+5. Run `npm run verify:changelog` (also runs in `npm run build`): every changelog key
+   resolves in every locale and the version marker matches `data[0].version`.
+6. Commit all release files together; create an annotated tag `vX.Y.Z`; push with
+   `--follow-tags`.
+
+The displayed version comes from `solution/VERSION` via `GET /api/version`; the backend
+reads it through `transcoder.version.read_version()` (backups stamp it into the manifest).
+
 ## Windows Notes
 
 This is primarily a Windows worker/server project; the shell is PowerShell.
