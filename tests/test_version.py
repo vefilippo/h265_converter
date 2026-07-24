@@ -5,7 +5,9 @@ from transcoder.version import read_version
 
 
 def test_read_version_returns_file_contents():
-    assert read_version() == "1.0.0"
+    # Compare against the real VERSION file so releases don't break this test.
+    expected = Path("solution/VERSION").read_text(encoding="utf-8").strip()
+    assert read_version() == expected
 
 
 def test_read_version_strips_whitespace(tmp_path, monkeypatch):
