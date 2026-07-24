@@ -25,10 +25,16 @@ export const useLibrary = (
     },
   });
 
-export const useJobs = (state?: string) =>
+export const useJobs = (state?: string, offset = 0, limit = 100) =>
   useQuery({
-    queryKey: ["jobs", state],
-    queryFn: () => api.get<JobPage>(`/api/jobs${state ? `?state_filter=${state}` : ""}`),
+    queryKey: ["jobs", state, offset, limit],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (state) p.set("state_filter", state);
+      p.set("limit", String(limit));
+      p.set("offset", String(offset));
+      return api.get<JobPage>(`/api/jobs?${p}`);
+    },
     refetchInterval: 5000,
   });
 

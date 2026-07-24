@@ -140,6 +140,48 @@ def test_job_404(api):
     assert client.post("/api/jobs/999/retry").status_code == 404
 
 
+def _seed_jobs(Session, states):
+    """Create one media_item + job per state, returning job ids in insert order."""
+    s = Session()
+    ids = []
+    for i, state in enumerate(states):
+        item = MediaItem(source="sonarr", external_id=str(1000 + i), title=f"T{i}",
+                         season=1, episode=i, remote_path=f"/x{i}", resolution=1080,
+                         eligibility="needs_transcode")
+        s.add(item); s.flush()
+        job = Job(media_item_id=item.id, state=state)
+        s.add(job); s.flush()
+        ids.append(job.id)
+    s.commit(); s.close()
+    return ids
+
+
+def test_list_jobs_returns_newest_first(api):
+    client, Session = api
+    _seed_jobs(Session, ["done", "done", "queued"])
+    body = client.get("/api/jobs").json()
+    ids = [j["id"] for j in body["items"]]
+    assert ids == sorted(ids, reverse=True)
+
+
+def test_list_jobs_paginates_beyond_limit(api):
+    client, Session = api
+    job_ids = _seed_jobs(Session, ["done"] * 5)
+    page1 = client.get("/api/jobs?limit=2").json()
+    assert page1["total"] == 5
+    assert [j["id"] for j in page1["items"]] == [job_ids[4], job_ids[3]]
+    page3 = client.get("/api/jobs?limit=2&offset=4").json()
+    assert [j["id"] for j in page3["items"]] == [job_ids[0]]
+
+
+def test_list_jobs_state_counts_cover_all_jobs_even_when_filtered(api):
+    client, Session = api
+    _seed_jobs(Session, ["done", "done", "queued", "failed"])
+    body = client.get("/api/jobs?state_filter=queued&limit=1").json()
+    assert body["total"] == 1
+    assert body["state_counts"] == {"done": 2, "queued": 1, "failed": 1}
+
+
 def test_jobs_list_includes_phase(api):
     client, Session = api
     iid = _seed_item(Session)

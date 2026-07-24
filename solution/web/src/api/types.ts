@@ -15,7 +15,7 @@ export interface Job {
   phase: string | null;
   created_at: string | null; started_at: string | null; finished_at: string | null;
 }
-export interface JobPage { total: number; items: Job[]; }
+export interface JobPage { total: number; items: Job[]; state_counts: Record<string, number>; }
 export interface JobLog { log: string; }
 export interface Exclusion { id: number; source: string; key: string; reason: string; matched: boolean; }
 export interface Savings {
