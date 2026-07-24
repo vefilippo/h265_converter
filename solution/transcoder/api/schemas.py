@@ -61,6 +61,9 @@ class JobOut(BaseModel):
 class JobPage(BaseModel):
     total: int
     items: list[JobOut]
+    # Whole-table counts by state (ignores state_filter/pagination), so the UI
+    # can show accurate filter badges without fetching every job.
+    state_counts: dict[str, int]
 
 
 class JobLogOut(BaseModel):

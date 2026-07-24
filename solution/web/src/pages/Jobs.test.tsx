@@ -52,10 +52,17 @@ function makeFetch() {
       });
     }
     if (url.includes("/api/jobs")) {
-      return new Response(JSON.stringify({ total: 2, items: ITEMS }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          total: 2,
+          items: ITEMS,
+          state_counts: { running: 1, failed: 1 },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
     return new Response(JSON.stringify({}), {
       status: 200,
@@ -128,6 +135,60 @@ test("defaults to sorting by When descending (most recent first)", async () => {
   const firstDataRow = rows[1];
   expect(firstDataRow.textContent).toContain("Movie X");
   expect(firstDataRow.textContent).not.toContain("Show A");
+});
+
+test("filter pills show whole-table counts from state_counts", async () => {
+  // The paged mock returns only 1 item per page but state_counts covering all
+  // 150 jobs: the pills must reflect the whole table, not the visible page.
+  vi.stubGlobal("fetch", makePagedFetch());
+  wrap(<Jobs />);
+  await screen.findByText(/New Movie/);
+  expect(screen.getByRole("button", { name: "All (150)" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Done (150)" })).toBeInTheDocument();
+});
+
+// Fetch mock that honours the offset param, simulating a table larger than one
+// page: newest job on page 1, oldest on page 2.
+function makePagedFetch() {
+  const job = (id: number, title: string) => ({
+    ...ITEMS[1], id, media_item_id: id, state: "done", title,
+  });
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/jobs")) {
+      const params = new URL(url, "http://localhost").searchParams;
+      const offset = Number(params.get("offset") ?? 0);
+      const items = offset === 0 ? [job(150, "New Movie")] : [job(1, "Old Show")];
+      return new Response(
+        JSON.stringify({ total: 150, items, state_counts: { done: 150 } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response(JSON.stringify({}), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  });
+}
+
+test("paginates: shows page info and fetches the next page via offset", async () => {
+  const fetchMock = makePagedFetch();
+  vi.stubGlobal("fetch", fetchMock);
+  wrap(<Jobs />);
+
+  // Page 1: the newest job is visible, the old one is not.
+  expect(await screen.findByText(/New Movie/)).toBeInTheDocument();
+  expect(screen.queryByText(/Old Show/)).not.toBeInTheDocument();
+  expect(screen.getByText(/page 1 of 2/i)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /next/i }));
+
+  // Page 2 was requested with offset=100 and renders the older job.
+  expect(await screen.findByText(/Old Show/)).toBeInTheDocument();
+  expect(screen.getByText(/page 2 of 2/i)).toBeInTheDocument();
+  const paged = fetchMock.mock.calls.some(([u]) =>
+    String(u).includes("offset=100"),
+  );
+  expect(paged).toBe(true);
 });
 
 test("clicking Cancel on queued job triggers POST /api/jobs/1/cancel", async () => {

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from transcoder.api.deps import get_session
@@ -46,12 +47,17 @@ def list_jobs(
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
 ):
+    state_counts = dict(
+        session.query(Job.state, func.count(Job.id)).group_by(Job.state).all()
+    )
     q = session.query(Job).options(joinedload(Job.media_item))
     if state_filter:
         q = q.filter(Job.state == state_filter)
     total = q.count()
-    rows = q.order_by(Job.id).limit(limit).offset(offset).all()
-    return JobPage(total=total, items=[_to_out(j) for j in rows])
+    # Newest first: recent jobs must be on page 1 or they'd be invisible in the
+    # UI once the table grows past one page.
+    rows = q.order_by(Job.id.desc()).limit(limit).offset(offset).all()
+    return JobPage(total=total, items=[_to_out(j) for j in rows], state_counts=state_counts)
 
 
 @router.post("/jobs/delete", response_model=JobDeleteOut)

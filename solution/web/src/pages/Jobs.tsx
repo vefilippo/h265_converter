@@ -112,37 +112,42 @@ function JobDetailDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   );
 }
 
+const LIMIT = 100;
+
 export default function Jobs() {
   usePageTitle("Jobs");
   const [stateFilter, setStateFilter] = useState("");
+  const [offset, setOffset] = useState(0);
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [selected, setSelected] = useState<Job[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Reset selection when the filter changes: keying the DataTable below on the
-  // filter remounts it so its internal checkbox state clears, and this clears
-  // the page-level selection array so the bulk bar can't act on now-hidden jobs.
-  useEffect(() => setSelected([]), [stateFilter]);
+  // Reset paging and selection when the filter changes; reset selection when
+  // the page changes. Keying the DataTable below remounts it so its internal
+  // checkbox state clears, and this clears the page-level selection array so
+  // the bulk bar can't act on now-hidden jobs.
+  useEffect(() => setOffset(0), [stateFilter]);
+  useEffect(() => setSelected([]), [stateFilter, offset]);
 
-  const { data, isLoading } = useJobs(stateFilter || undefined);
-  const { data: allData } = useJobs(undefined); // all jobs for count badges
+  const { data, isLoading } = useJobs(stateFilter || undefined, offset, LIMIT);
   const actions = useActions();
 
   const jobs = data?.items ?? [];
 
-  const stateCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    (allData?.items ?? []).forEach(j => {
-      counts[j.state] = (counts[j.state] ?? 0) + 1;
-    });
-    return counts;
-  }, [allData]);
+  // Whole-table counts come from the API (state_counts ignores filter/paging),
+  // so badges stay accurate even when the table is larger than one page.
+  const stateCounts = data?.state_counts ?? {};
+  const allCount = Object.values(stateCounts).reduce((a, b) => a + b, 0);
 
   function pillLabel(opt: { value: string; label: string }): string {
-    if (opt.value === "") return allData ? `All (${allData.total})` : "All";
+    if (opt.value === "") return data ? `All (${allCount})` : "All";
     const c = stateCounts[opt.value];
     return c != null ? `${opt.label} (${c})` : opt.label;
   }
+
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / LIMIT));
+  const currentPage = Math.floor(offset / LIMIT) + 1;
 
   const columns = useMemo<ColumnDef<Job, unknown>[]>(
     () => [
@@ -312,19 +317,44 @@ export default function Jobs() {
       )}
 
       {!isLoading && jobs.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <DataTable
-            key={stateFilter}
-            columns={columns}
-            data={jobs}
-            getRowId={(job) => String(job.id)}
-            initialSorting={[{ id: "when", desc: true }]}
-            onRowClick={(job) => setDetailJob(job)}
-            enableSelection
-            isRowSelectable={isJobDeletable}
-            onSelectionChange={setSelected}
-          />
-        </div>
+        <>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <DataTable
+              key={`${stateFilter}:${offset}`}
+              columns={columns}
+              data={jobs}
+              getRowId={(job) => String(job.id)}
+              initialSorting={[{ id: "when", desc: true }]}
+              onRowClick={(job) => setDetailJob(job)}
+              enableSelection
+              isRowSelectable={isJobDeletable}
+              onSelectionChange={setSelected}
+            />
+          </div>
+          {pageCount > 1 && (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-sm text-muted">
+                (page {currentPage} of {pageCount})
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - LIMIT))}
+              >
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset + LIMIT >= total}
+                onClick={() => setOffset(offset + LIMIT)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {detailJob && (
