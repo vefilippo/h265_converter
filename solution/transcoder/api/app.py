@@ -109,7 +109,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(meta.router)
 
     # Protected API routers.
-    from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs, backup
+    from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs, backup, encoders
     protected = [Depends(require_auth)]
     app.include_router(library.router, dependencies=protected)
     app.include_router(scan.router, dependencies=protected)
@@ -119,6 +119,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(logs.router, dependencies=protected)
     app.include_router(settings_router.router, dependencies=protected)
     app.include_router(backup.router, dependencies=protected)
+    app.include_router(encoders.router, dependencies=protected)
 
     import os
     from fastapi import Request
