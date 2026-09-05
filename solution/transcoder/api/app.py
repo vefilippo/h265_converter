@@ -39,9 +39,6 @@ def create_app(start_worker: bool = True) -> FastAPI:
             reconcile_stale_jobs(session)
         finally:
             session.close()
-        if start_worker:
-            state.controller.start()
-
         # Seed settings from env on first startup
         import bcrypt as _bcrypt
         from transcoder.repo import seed_settings_from_env, get_setting, set_setting
@@ -84,6 +81,13 @@ def create_app(start_worker: bool = True) -> FastAPI:
                 _db.commit()
             _sched_cron = get_setting(_db, "scheduler_cron")
             _sched_startup = get_setting(_db, "scheduler_run_at_startup") == "true"
+
+        # Start the worker only AFTER the encoder-family migration above: the
+        # worker thread polls for queued jobs immediately (and reconcile_stale_jobs
+        # has just re-queued orphans), so starting it earlier races the migration
+        # and the first job would resolve presets from a missing encoder_family.
+        if start_worker:
+            state.controller.start()
 
         # Define the scheduled job (same logic as POST /run)
         async def _scheduled_run():
