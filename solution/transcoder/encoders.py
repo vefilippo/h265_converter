@@ -289,6 +289,7 @@ def migrate_encoder_family(session) -> str | None:
     setup. The presence of `handbrake_preset_1080` in the DB is therefore the
     signal for "this install predates encoder families".
     """
+    from transcoder.config import settings as cfg
     from transcoder.repo import get_setting, set_setting
 
     if get_setting(session, FAMILY_KEY) is not None:
@@ -296,7 +297,11 @@ def migrate_encoder_family(session) -> str | None:
 
     stored_1080 = get_setting(session, "handbrake_preset_1080")
     if stored_1080 is None:
-        value = AUTO  # fresh install: nothing seeded yet
+        # Fresh install: nothing seeded yet. Seed from ENCODER_FAMILY — this
+        # backfill runs at startup before anything reads the family, so once a
+        # row exists get_effective() never consults the env fallback again.
+        # Without this, the documented ENCODER_FAMILY setting is dead config.
+        value = cfg.ENCODER_FAMILY or AUTO
     else:
         value = infer_family(stored_1080, get_setting(session, "handbrake_preset_4k") or "")
     set_setting(session, FAMILY_KEY, value)

@@ -139,3 +139,32 @@ def test_migrate_is_idempotent_and_never_overwrites(session):
     session.commit()
     assert migrate_encoder_family(session) is None
     assert get_setting(session, "encoder_family") == "qsv"
+
+
+def test_migrate_honours_encoder_family_from_config_on_fresh_install(session, monkeypatch):
+    """ENCODER_FAMILY is documented .env configuration. The backfill runs at
+    startup on every entry point before anything reads the family, so if it
+    hardcodes AUTO here the env value can never take effect on any install that
+    has ever booted -- get_effective() would always find the DB row."""
+    from transcoder.config import settings as cfg
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", CUSTOM)
+    assert migrate_encoder_family(session) == CUSTOM
+    session.commit()
+    assert get_setting(session, "encoder_family") == CUSTOM
+
+
+def test_migrate_falls_back_to_auto_when_config_family_is_blank(session, monkeypatch):
+    from transcoder.config import settings as cfg
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", "")
+    assert migrate_encoder_family(session) == AUTO
+
+
+def test_migrate_ignores_config_family_for_an_upgraded_install(session, monkeypatch):
+    """An existing install's presets are the stronger signal: the env default
+    must not silently retag a deliberate NVIDIA setup."""
+    from transcoder.config import settings as cfg
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", "vcn")
+    set_setting(session, "handbrake_preset_1080", "H.265 NVENC 1080p")
+    set_setting(session, "handbrake_preset_4k", "H.265 NVENC 2160p 4K")
+    session.commit()
+    assert migrate_encoder_family(session) == "nvenc"
