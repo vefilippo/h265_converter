@@ -1,8 +1,5 @@
 import subprocess
 
-import pytest
-
-from transcoder import encoders
 from transcoder.encoders import CPU, probe
 
 AMD_BANNER = """[17:01:27] Compile-time hardening features are enabled

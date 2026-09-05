@@ -43,10 +43,30 @@ def test_parse_intel_banner():
     assert parse_capabilities(INTEL_BANNER) == {"qsv", CPU}
 
 
-def test_parse_always_includes_cpu_even_for_empty_output():
-    # A successful parse always yields at least cpu; the EMPTY set is reserved
-    # by probe() to mean "capabilities unknown".
-    assert parse_capabilities("") == {CPU}
+def test_parse_returns_empty_set_for_unrecognisable_output():
+    # Empty output mentions none of vcn/nvenc/qsv, so it's unrecognised, not a
+    # confident "cpu only" result. Returning {CPU} here would make resolve()
+    # treat an explicitly-chosen nvenc/vcn as known-unavailable and silently
+    # substitute CPU — exactly the multi-hour-CPU-encode bug the "unknown is
+    # not unavailable" rule exists to prevent. The EMPTY set is reserved by
+    # probe() to mean "capabilities unknown".
+    assert parse_capabilities("") == set()
+
+
+def test_parse_returns_empty_set_for_unparseable_banner():
+    # Some future/older HandBrake banner format, or a different executable
+    # entirely that exits 0 with unrelated output, must not be confidently
+    # read as "cpu only" — that would make resolve() substitute CPU under an
+    # explicitly-chosen hardware family.
+    assert parse_capabilities("garbage output\n") == set()
+
+
+def test_parse_recognised_banner_still_includes_cpu():
+    assert CPU in parse_capabilities(NVIDIA_BANNER)
+
+
+def test_parse_amd_banner_returns_exactly_vcn_and_cpu():
+    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
 
 
 def test_auto_prefers_vcn_over_cpu():

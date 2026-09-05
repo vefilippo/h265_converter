@@ -54,3 +54,18 @@ def session():
 
 
 from tests.api_conftest import api  # noqa: E402,F401  (re-export API fixture)
+
+
+@pytest.fixture(autouse=True)
+def _no_encoder_probe(monkeypatch):
+    """Keep tests hermetic: never shell out to a real HandBrakeCLI.
+
+    Returns the empty set, i.e. "capabilities unknown". Tests that care about
+    specific hardware seed the cache with encoders.store_capabilities() or
+    monkeypatch encoders.probe themselves, which overrides this.
+    """
+    try:
+        from transcoder import encoders
+    except ImportError:
+        return  # module does not exist yet in earlier tasks
+    monkeypatch.setattr(encoders, "probe", lambda *a, **k: set())

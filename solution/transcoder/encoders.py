@@ -63,6 +63,14 @@ _AVAILABLE_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
+# HandBrake 1.11 always mentions each hardware family in its banner in one form
+# or another (e.g. "vcn: is available", "qsv: not available on this system",
+# "Cannot load nvEncodeAPI64.dll"). If a banner mentions NONE of these, we did
+# not understand the output — an older/newer HandBrake with a different format,
+# or some other executable that happens to exit 0 — and must report unknown
+# rather than a confident (and wrong) {cpu}. See parse_capabilities().
+_BANNER_MENTIONS_RE = re.compile(r"(vcn|nvenc|qsv|nvEncodeAPI)", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class Resolution:
@@ -79,10 +87,17 @@ class Resolution:
 def parse_capabilities(banner: str) -> set[str]:
     """Parse HandBrake's startup banner into the set of available families.
 
-    ``cpu`` is always included: x265 is built into every HandBrake build. This
-    means a successful parse never returns an empty set, which is what lets
-    ``probe()`` use the empty set to mean "unknown" (see its docstring).
+    ``cpu`` is always included when the banner is RECOGNISED: x265 is built
+    into every HandBrake build. But if the banner does not mention any of
+    vcn/nvenc/qsv in any form, we could not interpret it at all — an
+    older/newer HandBrake with a different banner format, or some other
+    executable that exits 0 — and must return the EMPTY set (unknown) rather
+    than a confident-but-wrong {cpu}. Otherwise an explicitly chosen hardware
+    family would look "known unavailable" and get silently substituted with
+    CPU by resolve(), defeating the "unknown is not unavailable" rule.
     """
+    if not _BANNER_MENTIONS_RE.search(banner or ""):
+        return set()
     found = {m.group(1).lower() for m in _AVAILABLE_RE.finditer(banner or "")}
     found.add(CPU)
     return found
