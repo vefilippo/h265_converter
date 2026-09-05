@@ -34,7 +34,7 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
 };
 
-import type { Settings, SettingsUpdate } from './types';
+import type { Settings, SettingsUpdate, EncodersResponse, DetectResponse } from './types';
 
 export const getSettings = (): Promise<Settings> =>
   api.get<Settings>('/api/settings');
@@ -71,3 +71,9 @@ export async function restoreBackup(file: File, passphrase: string): Promise<voi
     throw new ApiError(res.status, detail);
   }
 }
+
+export const getEncoders = (): Promise<EncodersResponse> =>
+  api.get<EncodersResponse>('/api/encoders');
+
+export const detectEncoders = (handbrakeCli?: string): Promise<DetectResponse> =>
+  api.post<DetectResponse>('/api/encoders/detect', { handbrake_cli: handbrakeCli || null });
