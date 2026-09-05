@@ -4,7 +4,7 @@ import os
 import re
 
 from transcoder.config import settings
-from transcoder.encoders import FAMILIES, resolve_for_job
+from transcoder.encoders import AUTO, CPU, FAMILIES, resolve_for_job
 from transcoder.repo import get_effective
 
 log = logging.getLogger("transcoder")
@@ -120,10 +120,21 @@ def process_one_job(
                 "CPU x265 — this will be substantially slower",
             )
         elif resolution.detection_unknown:
-            job_log(
-                session, job,
-                "Encoder detection unavailable; running the configured preset as set",
-            )
+            if resolution.family == CPU and resolution.requested == AUTO:
+                # 'auto' with unknown capabilities silently lands on CPU x265
+                # (see resolve()) -- that's the one detection_unknown case
+                # that is itself a slow substitution, so it gets the same loud
+                # wording as an explicit substituted fallback.
+                job_log(
+                    session, job,
+                    "Encoder detection unavailable; no hardware encoder could "
+                    "be confirmed, using CPU x265 — substantially slower",
+                )
+            else:
+                job_log(
+                    session, job,
+                    "Encoder detection unavailable; running the configured preset as set",
+                )
         output_file, exclude_flag = convert(
             tmp_file, out_name, job.preset,
             progress_cb=_progress_writer(session, job),

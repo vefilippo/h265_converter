@@ -82,6 +82,22 @@ def test_worker_does_not_fall_back_when_capabilities_unknown(session, monkeypatc
     assert job.preset == "H.265 NVENC 1080p"
 
 
+def test_worker_logs_cpu_warning_when_auto_resolves_unknown(session, monkeypatch):
+    """auto + unknown capabilities silently lands on CPU x265 (see resolve());
+    the log must say so loudly, not claim 'running the configured preset as set'
+    (nothing was configured -- the family was never chosen)."""
+    _patch_fs(monkeypatch)
+    item = _item(session, resolution=1080)
+    job = _job(session, item)
+    set_setting(session, "encoder_family", "auto")
+    session.commit()  # nothing cached; the autouse stub makes probe return unknown
+
+    _run(session, job)
+    assert job.preset == "H.265 MKV 1080p30"
+    assert "CPU x265" in job.log
+    assert "substantially slower" in job.log.lower()
+
+
 def test_generic_handbrake_failure_does_not_trigger_cpu_fallback(session, monkeypatch):
     """A corrupt input must never silently start an hours-long CPU encode."""
     _patch_fs(monkeypatch)
