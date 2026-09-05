@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     SFTP_PORT: int = 22
     PRESET_1080: str = "H.265 NVENC 1080p"
     PRESET_4K: str = "H.265 NVENC 2160p 4K"
+    # Encoder family: auto | vcn | nvenc | qsv | cpu | custom. PRESET_1080/4K
+    # above are only consulted in 'custom' mode; they are left at their historic
+    # NVENC values so existing .env files keep their behaviour.
+    ENCODER_FAMILY: str = "auto"
     OUTPUT_FORMAT: str = "av_mkv"
     OUTPUT_FOLDER: str = "./out/"
     WATCH_FOLDER: str = "./downloads/"

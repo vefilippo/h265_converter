@@ -138,3 +138,23 @@ def test_infer_family_returns_custom_for_mismatched_pair():
 
 def test_mf_is_not_in_the_catalog():
     assert "mf" not in encoders.FAMILIES
+
+
+def test_auto_with_only_non_catalog_ids_falls_back_to_cpu_without_raising():
+    # A capabilities blob containing only non-catalog ids (e.g. {"mf"} from a
+    # hand-edited or future-version DB) must not raise StopIteration.
+    r = resolve(AUTO, {"mf"})
+    assert r.family == CPU
+
+
+def test_explicit_cpu_is_never_reported_as_substituted():
+    # family == requested == cpu must never produce substituted=True, which
+    # would render a nonsense "substituted to CPU" message.
+    r = resolve(CPU, {"vcn"})
+    assert r.substituted is False
+
+
+def test_unrecognised_explicit_family_behaves_like_custom():
+    r = resolve("vce", {"vcn", CPU})
+    assert r.family == CUSTOM
+    assert r.requested == "vce"

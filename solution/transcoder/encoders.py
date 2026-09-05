@@ -8,10 +8,12 @@ Everything here is pure except ``probe()``, which shells out to HandBrakeCLI.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 AUTO = "auto"
 CUSTOM = "custom"
@@ -119,7 +121,10 @@ def resolve(
             # exists for determinism, not rescue.
             p1080, p4k = _presets(CPU)
             return Resolution(p1080, p4k, CPU, AUTO, False, True)
-        chosen = next(f for f in AUTO_PRIORITY if f in available)
+        # Fall back to cpu rather than raising StopIteration: a capabilities
+        # blob containing only non-catalog ids (e.g. from a hand-edited or
+        # future-version DB) must never crash job resolution.
+        chosen = next((f for f in AUTO_PRIORITY if f in available), CPU)
         p1080, p4k = _presets(chosen)
         return Resolution(p1080, p4k, chosen, AUTO, False, False)
 
@@ -127,7 +132,7 @@ def resolve(
         # Defensive: an unrecognised stored value behaves like custom.
         return Resolution(custom_1080, custom_4k, CUSTOM, family, False, unknown)
 
-    if not unknown and family not in available and fallback_cpu:
+    if family != CPU and not unknown and family not in available and fallback_cpu:
         p1080, p4k = _presets(CPU)
         return Resolution(p1080, p4k, CPU, family, True, False)
 
@@ -180,3 +185,105 @@ def probe(handbrake_cli: str, timeout: float = 30.0) -> set[str]:
         log.warning("Encoder probe failed for %r: %s", handbrake_cli, exc)
         return set()
     return parse_capabilities(proc.stdout or "")
+
+
+# ── DB-aware helpers ─────────────────────────────────────────────────────────
+# These read and write the ordinary key/value `setting` table. Callers own the
+# transaction boundary and must commit, matching the convention in repo.py.
+
+CAPABILITIES_KEY = "encoder_capabilities"
+FAMILY_KEY = "encoder_family"
+FALLBACK_KEY = "encoder_fallback_cpu"
+
+
+def load_capabilities(session) -> tuple[set[str], str | None]:
+    """Read the cached probe result. Returns (set(), None) when unknown."""
+    from transcoder.repo import get_setting
+
+    raw = get_setting(session, CAPABILITIES_KEY)
+    if not raw:
+        return set(), None
+    try:
+        blob = json.loads(raw)
+        return set(blob["available"]), blob.get("detected_at")
+    except (ValueError, KeyError, TypeError):
+        log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
+        return set(), None
+
+
+def store_capabilities(session, available: set[str]) -> str:
+    """Cache a probe result; returns the ISO-8601 detection timestamp."""
+    from transcoder.repo import set_setting
+
+    detected_at = datetime.now(timezone.utc).isoformat()
+    set_setting(session, CAPABILITIES_KEY, json.dumps({
+        "available": sorted(available),
+        "detected_at": detected_at,
+    }))
+    return detected_at
+
+
+def detect_and_store(session, handbrake_cli: str) -> tuple[set[str], str | None]:
+    """Probe and cache. A failed probe caches NOTHING, so 'unknown' never
+    hardens into a stored 'nothing is available'."""
+    available = probe(handbrake_cli)
+    if not available:
+        return set(), None
+    return available, store_capabilities(session, available)
+
+
+def get_or_detect_capabilities(session, handbrake_cli: str) -> tuple[set[str], str | None]:
+    """Cached capabilities, probing once lazily if nothing is cached yet.
+
+    This is what lets 'auto' work on a fresh install without adding a subprocess
+    call to every server start.
+    """
+    available, detected_at = load_capabilities(session)
+    if available:
+        return available, detected_at
+    return detect_and_store(session, handbrake_cli)
+
+
+def resolve_for_job(session) -> Resolution:
+    """Resolve the preset pair for a job from stored settings + capabilities."""
+    from transcoder.config import settings as cfg
+    from transcoder.repo import get_effective
+
+    family = get_effective(session, FAMILY_KEY, cfg.ENCODER_FAMILY)
+    fallback = get_effective(session, FALLBACK_KEY, "true") == "true"
+    custom_1080 = get_effective(session, "handbrake_preset_1080", cfg.PRESET_1080)
+    custom_4k = get_effective(session, "handbrake_preset_4k", cfg.PRESET_4K)
+    handbrake_cli = get_effective(session, "handbrake_cli", cfg.HANDBRAKE_CLI)
+
+    available, _ = get_or_detect_capabilities(session, handbrake_cli)
+    return resolve(
+        family, available,
+        fallback_cpu=fallback,
+        custom_1080=custom_1080,
+        custom_4k=custom_4k,
+    )
+
+
+def migrate_encoder_family(session) -> str | None:
+    """One-time backfill of `encoder_family`. Returns the value written, or None
+    if it was already set. Caller commits.
+
+    MUST run BEFORE seed_settings_from_env(): that seeder writes the NVENC
+    config defaults into `handbrake_preset_1080`/`_4k` on every startup, so once
+    it has run there is no way to tell a fresh install from a deliberate NVIDIA
+    setup. The presence of `handbrake_preset_1080` in the DB is therefore the
+    signal for "this install predates encoder families".
+    """
+    from transcoder.repo import get_setting, set_setting
+
+    if get_setting(session, FAMILY_KEY) is not None:
+        return None
+
+    stored_1080 = get_setting(session, "handbrake_preset_1080")
+    if stored_1080 is None:
+        value = AUTO  # fresh install: nothing seeded yet
+    else:
+        value = infer_family(stored_1080, get_setting(session, "handbrake_preset_4k") or "")
+    set_setting(session, FAMILY_KEY, value)
+    log.info("Backfilled encoder_family=%s", value)
+    return value

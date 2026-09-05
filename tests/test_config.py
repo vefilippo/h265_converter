@@ -22,3 +22,8 @@ def test_settings_web_auth_defaults():
     assert settings.WEB_DIST == "web/dist"
     assert settings.APP_PASSWORD  # provided by conftest env
     assert settings.SECRET_KEY
+
+
+def test_encoder_family_defaults_to_auto():
+    from transcoder.config import settings
+    assert settings.ENCODER_FAMILY == "auto"
