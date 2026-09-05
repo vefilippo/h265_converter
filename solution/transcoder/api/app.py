@@ -47,6 +47,12 @@ def create_app(start_worker: bool = True) -> FastAPI:
         from transcoder.db import SessionLocal as _SL
         _cfg = settings  # settings is already imported from transcoder.config
         with _SL() as _db:
+            # MUST precede seed_settings_from_env: the seeder writes the NVENC
+            # preset defaults, after which a fresh install is indistinguishable
+            # from a deliberate NVIDIA setup.
+            from transcoder.encoders import migrate_encoder_family
+            if migrate_encoder_family(_db) is not None:
+                _db.commit()
             seed_settings_from_env(_db, {
                 "sonarr_url": _cfg.SONARR_URL,
                 "sonarr_api_key": _cfg.SONARR_API_KEY,
