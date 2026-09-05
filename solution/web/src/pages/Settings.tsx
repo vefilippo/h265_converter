@@ -6,9 +6,11 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Spinner } from '../components/ui/spinner';
-import { api, getSettings, updateSettings } from '../api/client';
+import { Select } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
+import { api, getSettings, updateSettings, getEncoders, detectEncoders } from '../api/client';
 import BackupRestoreCard from './BackupRestoreCard';
-import type { SettingsUpdate } from '../api/types';
+import type { SettingsUpdate, EncodersResponse } from '../api/types';
 
 const REDACTED = '••••••••';
 
@@ -150,6 +152,8 @@ export default function Settings() {
   usePageTitle("Settings");
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
+  const { data: encoderData } = useQuery({ queryKey: ['encoders'], queryFn: getEncoders });
+  useEffect(() => { if (encoderData) setEncInfo(encoderData); }, [encoderData]);
 
   // Scheduler
   const [cron, setCron] = useState('');
@@ -179,6 +183,11 @@ export default function Settings() {
   const [transSaved, setTransSaved] = useState(false);
   const [transError, setTransError] = useState<string | null>(null);
   const [transDirty, setTransDirty] = useState(false);
+  const [encFamily, setEncFamily] = useState('auto');
+  const [encFallback, setEncFallback] = useState(true);
+  const [encInfo, setEncInfo] = useState<EncodersResponse | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
 
   // Security
   const [currentPw, setCurrentPw] = useState('');
@@ -211,6 +220,8 @@ export default function Settings() {
     setHbCli(data.handbrake_cli);
     setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
     setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
+    setEncFamily(data.encoder_family || 'auto');
+    setEncFallback(data.encoder_fallback_cpu !== 'false');
     setWebhookUser(data.webhook_username || '');
     setWebhookPass(data.webhook_password_set ? REDACTED : '');
     setSchedDirty(false);
@@ -243,6 +254,25 @@ export default function Settings() {
       setError(e instanceof Error ? e.message : 'Save failed');
     }
   }
+
+  async function runDetect() {
+    setDetecting(true);
+    setDetectError(null);
+    try {
+      const res = await detectEncoders(hbCli);
+      setEncInfo(res);
+      if (!res.ok) setDetectError(res.error ?? 'Detection failed');
+    } catch {
+      setDetectError('Detection failed');
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  // Only warn when detection actually ran: unknown is not unavailable.
+  const detected = !!encInfo?.detected_at;
+  const chosen = encInfo?.families?.find(f => f.id === encFamily);
+  const familyUnavailable = detected && !!chosen && !chosen.available;
 
   const cronDescription = cron ? cronDesc(cron) : '';
   const cronIsValid = !cron || cronValid(cron);
@@ -428,11 +458,14 @@ export default function Settings() {
         </Card>
       </section>
 
-      {/* ── Encoder ── */}
-      <section aria-labelledby="enc-heading" className="mb-6">
+      {/* ── Encoder ──
+          aria-label (not aria-labelledby) here: the section's own accessible
+          name must not collide with the "Encoder" <label> on the family
+          <select> below, or byLabelText queries become ambiguous. */}
+      <section aria-label="Encoder settings" className="mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
-            <h2 id="enc-heading" className="font-display text-lg text-fg">Encoder</h2>
+            <h2 className="font-display text-lg text-fg">Encoder</h2>
             {transDirty && <DirtyDot />}
           </CardHeader>
           <CardContent className="space-y-4 pt-5">
@@ -441,20 +474,70 @@ export default function Settings() {
                 className="font-mono text-xs"
                 onChange={e => { setHbCli(e.target.value); setTransDirty(true); }} />
             </Field>
-            <Field htmlFor="hb-1080" label="1080p preset">
-              <Input id="hb-1080" value={hbPreset1080}
-                onChange={e => { setHbPreset1080(e.target.value); setTransDirty(true); }} />
+            <Field htmlFor="enc-family" label="Encoder">
+              <Select id="enc-family" value={encFamily}
+                onChange={e => { setEncFamily(e.target.value); setTransDirty(true); }}>
+                <option value="auto">Auto (recommended)</option>
+                {(encInfo?.families ?? []).map(f => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+                <option value="custom">Custom…</option>
+              </Select>
             </Field>
-            <Field htmlFor="hb-4k" label="4K preset">
-              <Input id="hb-4k" value={hbPreset4k}
-                onChange={e => { setHbPreset4k(e.target.value); setTransDirty(true); }} />
-            </Field>
+
+            <div className="flex items-center gap-3">
+              <Button size="sm" variant="outline" onClick={runDetect} disabled={detecting}
+                aria-busy={detecting} aria-label="Detect available encoders">
+                {detecting ? 'Detecting…' : 'Detect'}
+              </Button>
+              {/* Only after a real probe — an undetected host is unknown, not empty. */}
+              {detected && encInfo?.families?.map(f => (
+                <Badge key={f.id} data-testid={`enc-avail-${f.id}`}
+                  variant={f.available ? 'done' : 'neutral'}>
+                  {f.label}: {f.available ? 'available' : 'not available'}
+                </Badge>
+              ))}
+            </div>
+            {detectError && (
+              <p className="text-xs text-state-failed">{detectError}</p>
+            )}
+            {familyUnavailable && (
+              <p role="alert" className="text-xs text-state-failed">
+                {chosen?.label} is not available on this host.
+                {encFallback
+                  ? ' Jobs will fall back to CPU x265, which is substantially slower.'
+                  : ' Jobs using it will fail.'}
+              </p>
+            )}
+
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={encFallback}
+                onChange={e => { setEncFallback(e.target.checked); setTransDirty(true); }} />
+              Fall back to CPU x265 when the hardware encoder is unavailable
+            </label>
+
+            {encFamily === 'custom' && (
+              <>
+                <Field htmlFor="hb-1080" label="1080p preset">
+                  <Input id="hb-1080" value={hbPreset1080}
+                    onChange={e => { setHbPreset1080(e.target.value); setTransDirty(true); }} />
+                </Field>
+                <Field htmlFor="hb-4k" label="4K preset">
+                  <Input id="hb-4k" value={hbPreset4k}
+                    onChange={e => { setHbPreset4k(e.target.value); setTransDirty(true); }} />
+                </Field>
+              </>
+            )}
 
             <div className="flex items-center gap-3 border-t border-border pt-4">
               <Button size="sm"
                 onClick={() => save(
-                  { handbrake_cli: hbCli, handbrake_preset_1080: hbPreset1080,
-                    handbrake_preset_4k: hbPreset4k },
+                  { handbrake_cli: hbCli,
+                    encoder_family: encFamily,
+                    encoder_fallback_cpu: encFallback ? 'true' : 'false',
+                    ...(encFamily === 'custom'
+                      ? { handbrake_preset_1080: hbPreset1080, handbrake_preset_4k: hbPreset4k }
+                      : {}) },
                   transMut.mutateAsync, setTransSaved, setTransError, setTransDirty,
                 )}
                 disabled={transMut.isPending}
