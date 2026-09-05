@@ -8,7 +8,9 @@ Everything here is pure except ``probe()``, which shells out to HandBrakeCLI.
 
 from __future__ import annotations
 
+import logging
 import re
+import subprocess
 from dataclasses import dataclass
 
 AUTO = "auto"
@@ -145,3 +147,36 @@ def infer_family(preset_1080: str, preset_4k: str) -> str:
         if preset_1080 == meta["preset_1080"] and preset_4k == meta["preset_4k"]:
             return fid
     return CUSTOM
+
+
+log = logging.getLogger("transcoder")
+
+
+def probe(handbrake_cli: str, timeout: float = 30.0) -> set[str]:
+    """Ask HandBrake what it can encode with, by running ``--version``.
+
+    HandBrake prints its capability banner on every invocation, so ``--version``
+    is a ~1s probe. Returns the available families, or an EMPTY SET meaning
+    "unknown" — a missing executable, a timeout, or any other failure. Callers
+    must treat empty as unknown, never as "nothing available".
+    """
+    if not handbrake_cli:
+        return set()
+    try:
+        # CREATE_NO_WINDOW keeps a console window from flashing when the app
+        # runs from the tray or a scheduled task; absent on non-Windows.
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc = subprocess.run(
+            [handbrake_cli, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=creationflags,
+        )
+    except Exception as exc:  # missing exe, timeout, permission error, ...
+        log.warning("Encoder probe failed for %r: %s", handbrake_cli, exc)
+        return set()
+    return parse_capabilities(proc.stdout or "")
