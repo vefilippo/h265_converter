@@ -36,3 +36,70 @@ test("can skip optional steps to finish", async () => {
 
   await waitFor(() => expect(onDone).toHaveBeenCalled());
 });
+
+const DETECT_OK = {
+  ok: true,
+  available: ["cpu", "vcn"],
+  detected_at: "2026-09-05T17:00:00Z",
+  families: [
+    { id: "vcn", label: "AMD VCN", preset_1080: "H.265 VCN 1080p", preset_4k: "H.265 VCN 2160p 4K", hardware: true, available: true },
+    { id: "cpu", label: "CPU (x265)", preset_1080: "H.265 MKV 1080p30", preset_4k: "H.265 MKV 2160p60 4K", hardware: false, available: true },
+  ],
+};
+
+const DETECT_FAIL = {
+  ok: false,
+  error: "Could not run hb.exe. Check the HandBrake CLI path.",
+  available: [],
+  detected_at: null,
+  families: [],
+};
+
+function stubFetch(detectBody: unknown) {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const body = url.includes("/api/encoders/detect") ? detectBody : { ok: true };
+    return new Response(JSON.stringify(body), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  }));
+}
+
+/** Render the wizard and advance password -> connections -> handbrake step. */
+async function gotoHandbrakeStep() {
+  render(<Setup onDone={() => {}} />);
+  await userEvent.type(screen.getByLabelText(/password/i), "hunter2");
+  await userEvent.click(screen.getByRole("button", { name: /create password/i }));
+  // Skip connections; the next screen is the HandBrake step.
+  await userEvent.click(await screen.findByRole("button", { name: /skip/i }));
+}
+
+test("wizard detects encoders and reports the hardware found", async () => {
+  stubFetch(DETECT_OK);
+  await gotoHandbrakeStep();
+  await userEvent.click(await screen.findByRole("button", { name: /detect/i }));
+  expect(await screen.findByText(/Found AMD VCN/i)).toBeInTheDocument();
+});
+
+test("wizard reports when detection fails", async () => {
+  stubFetch(DETECT_FAIL);
+  await gotoHandbrakeStep();
+  await userEvent.click(await screen.findByRole("button", { name: /detect/i }));
+  expect(await screen.findByText(/could not run/i)).toBeInTheDocument();
+});
+
+test("wizard saves the detected family with the CLI path", async () => {
+  stubFetch(DETECT_OK);
+  await gotoHandbrakeStep();
+  await userEvent.click(await screen.findByRole("button", { name: /detect/i }));
+  await screen.findByText(/Found AMD VCN/i);
+  await userEvent.click(screen.getByRole("button", { name: /save & continue/i }));
+
+  await waitFor(() => {
+    const put = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).includes("/api/settings"),
+    );
+    expect(put).toBeTruthy();
+    expect(JSON.parse((put![1] as RequestInit).body as string).encoder_family).toBe("vcn");
+  });
+});

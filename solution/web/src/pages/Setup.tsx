@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
-import { updateSettings } from "../api/client";
+import { updateSettings, detectEncoders } from "../api/client";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -26,6 +26,10 @@ export default function Setup({ onDone }: SetupProps) {
   const [sftpUser, setSftpUser] = useState("");
   const [sftpPass, setSftpPass] = useState("");
   const [handbrake, setHandbrake] = useState("");
+  const [encFamily, setEncFamily] = useState("auto");
+  const [encFound, setEncFound] = useState<string | null>(null);
+  const [encError, setEncError] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
 
   async function createPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -55,10 +59,33 @@ export default function Setup({ onDone }: SetupProps) {
     }
   }
 
+  async function detect() {
+    setDetecting(true);
+    setEncError(null);
+    setEncFound(null);
+    try {
+      const res = await detectEncoders(handbrake);
+      if (!res.ok) {
+        setEncError(res.error ?? "Detection failed");
+        return;
+      }
+      // Hardware before software, matching the backend's auto priority.
+      const best = res.families.find(f => f.available && f.hardware);
+      setEncFamily(best ? best.id : "cpu");
+      setEncFound(best
+        ? `Found ${best.label} — using hardware H.265 encoding.`
+        : "No hardware encoder found — using CPU x265.");
+    } catch {
+      setEncError("Detection failed");
+    } finally {
+      setDetecting(false);
+    }
+  }
+
   async function saveHandbrake() {
     setBusy(true);
     try {
-      await updateSettings({ handbrake_cli: handbrake });
+      await updateSettings({ handbrake_cli: handbrake, encoder_family: encFamily });
     } finally {
       setBusy(false);
       setStep("done");
@@ -119,6 +146,14 @@ export default function Setup({ onDone }: SetupProps) {
               <p className="text-sm text-muted">Path to HandBrakeCLI.exe (optional).</p>
               <Input placeholder="C:\path\to\HandBrakeCLI.exe" value={handbrake}
                 onChange={(e) => setHandbrake(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={detect} disabled={detecting}
+                  aria-busy={detecting}>
+                  {detecting ? "Detecting…" : "Detect"}
+                </Button>
+                {encFound && <span className="text-xs text-muted">{encFound}</span>}
+                {encError && <span className="text-xs text-state-failed">{encError}</span>}
+              </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep("done")} disabled={busy}>Skip</Button>
                 <Button onClick={saveHandbrake} disabled={busy}>Save & continue</Button>
