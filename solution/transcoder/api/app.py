@@ -26,7 +26,8 @@ def create_app(start_worker: bool = True) -> FastAPI:
         # the one we boot on.
         _dbp = db_path_from_url(settings.DATABASE_URL)
         import os as _os
-        apply_pending_restore(_os.path.dirname(_os.path.abspath(_dbp)) or ".", _dbp, ".env")
+        _restored = apply_pending_restore(
+            _os.path.dirname(_os.path.abspath(_dbp)) or ".", _dbp, ".env")
         init_db()
         backup_db()
         ensure_job_columns()
@@ -53,6 +54,17 @@ def create_app(start_worker: bool = True) -> FastAPI:
             from transcoder.encoders import migrate_encoder_family
             if migrate_encoder_family(_db) is not None:
                 _db.commit()
+            if _restored:
+                # The backup snapshotted the SOURCE host's capability cache, and
+                # restore-onto-different-hardware is the whole point of the
+                # feature. A stale blob is worse than none: it makes 'auto' pick
+                # an encoder this box does not have, and it *disables* the CPU
+                # fallback for an explicit family that the old host really did
+                # have. Blank it (falsy raw == unknown) so the next job re-probes.
+                from transcoder.encoders import CAPABILITIES_KEY
+                set_setting(_db, CAPABILITIES_KEY, "")
+                _db.commit()
+                log.info("Restore applied: cleared cached encoder capabilities")
             seed_settings_from_env(_db, {
                 "sonarr_url": _cfg.SONARR_URL,
                 "sonarr_api_key": _cfg.SONARR_API_KEY,
