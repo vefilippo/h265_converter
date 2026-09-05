@@ -106,6 +106,7 @@ test("encoder dropdown shows the family choices", async () => {
   renderPage();
   const sel = await screen.findByRole("combobox", { name: /encoder/i });
   expect(sel).toBeInTheDocument();
+  expect(sel).toHaveValue("cpu");
   expect(screen.getByRole("option", { name: /amd vcn/i })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: /cpu \(x265\)/i })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: /custom/i })).toBeInTheDocument();
