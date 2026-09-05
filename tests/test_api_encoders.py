@@ -45,7 +45,7 @@ def test_get_encoders_does_not_probe(api, monkeypatch):
 
 def test_detect_probes_caches_and_reports(api, monkeypatch):
     client, Session = api
-    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: {"vcn", CPU})
+    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: ({"vcn", CPU}, {"nvenc"}))
     with Session() as db:
         set_setting(db, "handbrake_cli", "hb.exe")
         db.commit()
@@ -64,7 +64,7 @@ def test_detect_accepts_an_unsaved_cli_path(api, monkeypatch):
 
     def fake_probe(cli, **kw):
         seen["cli"] = cli
-        return {"qsv", CPU}
+        return {"qsv", CPU}, {"vcn"}
 
     monkeypatch.setattr(encoders, "probe", fake_probe)
     client.post("/api/encoders/detect", json={"handbrake_cli": "D:/typed.exe"})
@@ -73,7 +73,7 @@ def test_detect_accepts_an_unsaved_cli_path(api, monkeypatch):
 
 def test_detect_reports_failure_without_caching(api, monkeypatch):
     client, Session = api
-    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: set())
+    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: (set(), set()))
     with Session() as db:
         set_setting(db, "handbrake_cli", "broken.exe")
         db.commit()
@@ -90,7 +90,7 @@ def test_detect_errors_when_no_cli_configured(api, monkeypatch):
     with Session() as db:
         set_setting(db, "handbrake_cli", "")
         db.commit()
-    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: {"vcn", CPU})
+    monkeypatch.setattr(encoders, "probe", lambda cli, **kw: ({"vcn", CPU}, set()))
     body = client.post("/api/encoders/detect", json={}).json()
     assert body["ok"] is False
     assert "not set" in body["error"].lower()

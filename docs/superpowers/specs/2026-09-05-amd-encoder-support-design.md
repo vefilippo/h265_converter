@@ -70,9 +70,32 @@ over the same vendor hardware it offers nothing the vendor family does not.
 The reference machine has neither NVIDIA nor Intel hardware, so only the *negative*
 signals for those families were observed (`Cannot load nvEncodeAPI64.dll`,
 `qsv: not available on this system`) alongside the *positive* AMD signal
-(`vcn: is available`). The parser therefore treats `<family>: is available` as the
-positive pattern and absence-of-positive as unavailable. This fails safe: the worst
-outcome is under-reporting an encoder that the user can still select manually.
+(`vcn: is available`). The positive NVENC and QSV wordings are therefore unverified.
+
+An earlier draft of this spec claimed that treating absence-of-positive as
+unavailable "fails safe: the worst outcome is under-reporting an encoder the user
+can still select manually". **That was wrong.** Under-reporting a family put it
+outside `available` with `unknown == False`, which is exactly the state `resolve()`
+substitutes on: with the default `fallback_cpu=True` the user was swapped onto a
+multi-hour CPU x265 encode, and selecting the family manually did *not* help,
+because the fallback fires on an explicit family too. The only escape was
+unchecking the fallback box. So an unrecognised NVIDIA positive line would have
+quietly demoted every NVIDIA user — a regression for the population this branch was
+never meant to touch.
+
+The parser therefore reads positives and negatives **separately**, at the
+granularity HandBrake actually reports at:
+
+- `parse_capabilities(banner) -> set[str]` — families positively reported available
+  (plus `cpu`); the empty set means the banner was not recognised at all.
+- `parse_unavailable(banner) -> set[str]` — families the banner explicitly reports
+  as absent. Verified forms only: `<family>: not available on this system` for
+  `vcn`/`nvenc`/`qsv`, and `Cannot load nvEncodeAPI64.dll` for `nvenc`.
+
+A family in neither set is **unknown**, and `resolve()` substitutes only on an
+explicit negative. Under-detection now costs a missing checkmark in the UI, never a
+substitution. Old cached capability blobs carry no `unavailable` key and so read as
+"nothing known to be absent" — the safe direction.
 
 ## Architecture
 
@@ -83,16 +106,22 @@ Almost entirely pure, so it is cheap to test. One impure function, isolated.
 - `FAMILIES` — the catalog above: family id to label, `preset_1080`, `preset_4k`,
   and hardware/software kind.
 - `parse_capabilities(banner: str) -> set[str]` — pure. Parses HandBrake's startup
-  text into the set of available families. `cpu` is always present; x265 is built in.
-- `probe(handbrake_cli: str) -> set[str]` — the only impure function. Runs
-  `HandBrakeCLI --version` with a timeout and parses the output. A missing
-  executable or a timeout returns an empty set rather than raising.
+  text into the set of available families. `cpu` is present whenever the banner was
+  recognised; x265 is built in.
+- `parse_unavailable(banner: str) -> set[str]` — pure. The families the banner
+  explicitly reports as absent. The only input that may trigger a substitution.
+- `probe(handbrake_cli: str) -> tuple[set[str], set[str]]` — the only impure
+  function. Runs `HandBrakeCLI --version` with a timeout and parses the output into
+  `(available, unavailable)`. A missing executable or a timeout returns two empty
+  sets rather than raising.
 
-  The empty set is load-bearing: a *successful* parse always contains at least
-  `cpu`, so an empty set unambiguously means "probe failed / capabilities
+  The empty `available` set is load-bearing: a *successful* parse always contains at
+  least `cpu`, so an empty set unambiguously means "probe failed / capabilities
   unknown" and is never confused with "nothing is available".
-- `resolve(family, available, custom_1080, custom_4k)` — pure. Returns the preset
-  pair, the family actually used, and whether a substitution occurred.
+- `resolve(family, available, unavailable, custom_1080, custom_4k)` — pure. Returns
+  the preset pair, the family actually used, and whether a substitution occurred.
+  Substitutes only when the requested family is in `unavailable` and not in
+  `available`.
 - `infer_family(preset_1080, preset_4k) -> str` — pure reverse lookup, used for
   read-time migration.
 
@@ -105,7 +134,11 @@ change — `setting` is already a key/value table.
 - `encoder_fallback_cpu` — boolean, defaults to **on**, stored as the strings
   `"true"` / `"false"` to match the existing `scheduler_run_at_startup` convention
 - `encoder_capabilities` — the cached probe result, a JSON object of the shape
-  `{"available": ["vcn", "cpu"], "detected_at": "<ISO-8601>"}`
+  `{"available": ["vcn", "cpu"], "unavailable": ["nvenc", "qsv"], "detected_at": "<ISO-8601>"}`.
+  A blob without `unavailable` (written before negatives were recorded) reads as
+  "nothing known to be absent", so it can never cause a substitution. The cache is
+  blanked when a backup is restored: it belongs to the host that was probed, and
+  restoring onto different hardware is the point of the feature.
 
 `config.py` gains `ENCODER_FAMILY: str = "auto"`. `PRESET_1080` / `PRESET_4K` are
 left unchanged: with a family set they matter only in `custom` mode, and altering

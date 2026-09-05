@@ -55,13 +55,28 @@ AUTO_PRIORITY: tuple[str, ...] = ("vcn", "nvenc", "qsv", "cpu")
 # HandBrake announces hardware support in its startup banner on every
 # invocation, e.g. "[17:01:27] vcn: is available". Unavailable families print
 # "<name>: not available on this system", and a missing NVIDIA runtime prints
-# "Cannot load nvEncodeAPI64.dll" with no family prefix at all — so we match
-# only the positive form and treat absence as unavailable. That fails safe: at
-# worst we under-report an encoder the user can still select by hand.
+# "Cannot load nvEncodeAPI64.dll" with no family prefix at all.
+#
+# Positive and negative signals are parsed SEPARATELY, and a family the banner
+# mentions in neither form stays UNKNOWN. Absence must not imply unavailable:
+# only the AMD positive and the two negatives above were observed on real
+# hardware, so if some NVIDIA build words its positive line differently, an
+# absence-means-unavailable parser would silently divert every NVIDIA user onto
+# an hours-long CPU x265 encode (resolve() substitutes on "known unavailable").
+# Under-detection must cost us a missing checkmark, never a substitution.
 _AVAILABLE_RE = re.compile(
     r"^\s*(?:\[[\d:]+\]\s*)?(vcn|nvenc|qsv):\s*is available\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
+
+# The verified negative forms. "<family>: not available on this system" is
+# printed for vcn/nvenc/qsv; a missing NVIDIA runtime prints the DLL line
+# instead, with no family prefix, and means nvenc specifically.
+_UNAVAILABLE_RE = re.compile(
+    r"^\s*(?:\[[\d:]+\]\s*)?(vcn|nvenc|qsv):\s*not available on this system\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+_NVENC_DLL_RE = re.compile(r"Cannot load nvEncodeAPI64\.dll", re.IGNORECASE)
 
 # HandBrake 1.11 always mentions each hardware family in its banner in one form
 # or another (e.g. "vcn: is available", "qsv: not available on this system",
@@ -103,6 +118,20 @@ def parse_capabilities(banner: str) -> set[str]:
     return found
 
 
+def parse_unavailable(banner: str) -> set[str]:
+    """Families the banner EXPLICITLY reports as absent.
+
+    This is the only thing that may trigger a CPU substitution. A family that
+    appears in neither this set nor parse_capabilities() is unknown, and unknown
+    is not unavailable — it runs as configured.
+    """
+    text = banner or ""
+    found = {m.group(1).lower() for m in _UNAVAILABLE_RE.finditer(text)}
+    if _NVENC_DLL_RE.search(text):
+        found.add("nvenc")
+    return found
+
+
 def _presets(family: str) -> tuple[str, str]:
     meta = FAMILIES[family]
     return meta["preset_1080"], meta["preset_4k"]
@@ -111,6 +140,7 @@ def _presets(family: str) -> tuple[str, str]:
 def resolve(
     family: str,
     available: set[str],
+    unavailable: set[str] | frozenset[str] = frozenset(),
     *,
     fallback_cpu: bool = True,
     custom_1080: str = "",
@@ -118,10 +148,14 @@ def resolve(
 ) -> Resolution:
     """Pick the preset pair for a job.
 
-    An EMPTY ``available`` means capabilities are unknown, which is deliberately
-    not the same as "unavailable": an explicitly chosen family is always run as
-    configured, so a broken probe can never silently divert the user onto an
-    hours-long CPU encode.
+    ``available`` and ``unavailable`` are the banner's POSITIVE and NEGATIVE
+    reports; a family in neither is unknown. Unknown is deliberately not the
+    same as unavailable: an explicitly chosen family is run as configured unless
+    the banner explicitly said it is absent, so neither a broken probe nor a
+    banner wording we failed to recognise can silently divert the user onto an
+    hours-long CPU encode. ``unavailable`` defaults to empty, which is the safe
+    direction — that is also what an old cached blob (written before negatives
+    were recorded) resolves to.
     """
     unknown = not available
 
@@ -147,9 +181,13 @@ def resolve(
         # Defensive: an unrecognised stored value behaves like custom.
         return Resolution(custom_1080, custom_4k, CUSTOM, family, False, unknown)
 
-    if family != CPU and not unknown and family not in available and fallback_cpu:
+    # Substitute ONLY on an explicit negative. A positive report wins over a
+    # contradictory negative in the same blob: substitution is the harmful
+    # direction, so it takes the stronger evidence.
+    if (family != CPU and fallback_cpu
+            and family in unavailable and family not in available):
         p1080, p4k = _presets(CPU)
-        return Resolution(p1080, p4k, CPU, family, True, False)
+        return Resolution(p1080, p4k, CPU, family, True, unknown)
 
     p1080, p4k = _presets(family)
     return Resolution(p1080, p4k, family, family, False, unknown)
@@ -172,16 +210,18 @@ def infer_family(preset_1080: str, preset_4k: str) -> str:
 log = logging.getLogger("transcoder")
 
 
-def probe(handbrake_cli: str, timeout: float = 30.0) -> set[str]:
+def probe(handbrake_cli: str, timeout: float = 30.0) -> tuple[set[str], set[str]]:
     """Ask HandBrake what it can encode with, by running ``--version``.
 
     HandBrake prints its capability banner on every invocation, so ``--version``
-    is a ~1s probe. Returns the available families, or an EMPTY SET meaning
+    is a ~1s probe. Returns ``(available, unavailable)``: the families reported
+    present and the families reported explicitly absent. Two EMPTY SETS mean
     "unknown" — a missing executable, a timeout, or any other failure. Callers
-    must treat empty as unknown, never as "nothing available".
+    must treat empty as unknown, never as "nothing available"; and a family in
+    neither set is unknown too, never "unavailable".
     """
     if not handbrake_cli:
-        return set()
+        return set(), set()
     try:
         # CREATE_NO_WINDOW keeps a console window from flashing when the app
         # runs from the tray or a scheduled task; absent on non-Windows.
@@ -198,8 +238,9 @@ def probe(handbrake_cli: str, timeout: float = 30.0) -> set[str]:
         )
     except Exception as exc:  # missing exe, timeout, permission error, ...
         log.warning("Encoder probe failed for %r: %s", handbrake_cli, exc)
-        return set()
-    return parse_capabilities(proc.stdout or "")
+        return set(), set()
+    banner = proc.stdout or ""
+    return parse_capabilities(banner), parse_unavailable(banner)
 
 
 # ── DB-aware helpers ─────────────────────────────────────────────────────────
@@ -211,51 +252,68 @@ FAMILY_KEY = "encoder_family"
 FALLBACK_KEY = "encoder_fallback_cpu"
 
 
-def load_capabilities(session) -> tuple[set[str], str | None]:
-    """Read the cached probe result. Returns (set(), None) when unknown."""
+def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
+    """Read the cached probe result as ``(available, unavailable, detected_at)``.
+
+    Returns ``(set(), set(), None)`` when unknown. A blob written before
+    negatives were recorded has no ``unavailable`` key and therefore reports
+    nothing as explicitly absent — the safe direction, since only an explicit
+    negative may substitute an encoder away from the user's choice.
+    """
     from transcoder.repo import get_setting
 
     raw = get_setting(session, CAPABILITIES_KEY)
     if not raw:
-        return set(), None
+        return set(), set(), None
     try:
         blob = json.loads(raw)
-        return set(blob["available"]), blob.get("detected_at")
+        return (set(blob["available"]),
+                set(blob.get("unavailable") or []),
+                blob.get("detected_at"))
     except (ValueError, KeyError, TypeError):
         log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
-        return set(), None
+        return set(), set(), None
 
 
-def store_capabilities(session, available: set[str]) -> str:
+def store_capabilities(
+    session,
+    available: set[str],
+    unavailable: set[str] | frozenset[str] = frozenset(),
+) -> str:
     """Cache a probe result; returns the ISO-8601 detection timestamp."""
     from transcoder.repo import set_setting
 
     detected_at = datetime.now(timezone.utc).isoformat()
     set_setting(session, CAPABILITIES_KEY, json.dumps({
         "available": sorted(available),
+        "unavailable": sorted(unavailable),
         "detected_at": detected_at,
     }))
     return detected_at
 
 
-def detect_and_store(session, handbrake_cli: str) -> tuple[set[str], str | None]:
+def detect_and_store(
+    session, handbrake_cli: str
+) -> tuple[set[str], set[str], str | None]:
     """Probe and cache. A failed probe caches NOTHING, so 'unknown' never
     hardens into a stored 'nothing is available'."""
-    available = probe(handbrake_cli)
+    available, unavailable = probe(handbrake_cli)
     if not available:
-        return set(), None
-    return available, store_capabilities(session, available)
+        return set(), set(), None
+    return available, unavailable, store_capabilities(session, available, unavailable)
 
 
-def get_or_detect_capabilities(session, handbrake_cli: str) -> tuple[set[str], str | None]:
+def get_or_detect_capabilities(
+    session, handbrake_cli: str
+) -> tuple[set[str], set[str], str | None]:
     """Cached capabilities, probing once lazily if nothing is cached yet.
 
     This is what lets 'auto' work on a fresh install without adding a subprocess
     call to every server start.
     """
-    available, detected_at = load_capabilities(session)
+    available, unavailable, detected_at = load_capabilities(session)
     if available:
-        return available, detected_at
+        return available, unavailable, detected_at
     return detect_and_store(session, handbrake_cli)
 
 
@@ -270,9 +328,9 @@ def resolve_for_job(session) -> Resolution:
     custom_4k = get_effective(session, "handbrake_preset_4k", cfg.PRESET_4K)
     handbrake_cli = get_effective(session, "handbrake_cli", cfg.HANDBRAKE_CLI)
 
-    available, _ = get_or_detect_capabilities(session, handbrake_cli)
+    available, unavailable, _ = get_or_detect_capabilities(session, handbrake_cli)
     return resolve(
-        family, available,
+        family, available, unavailable,
         fallback_cpu=fallback,
         custom_1080=custom_1080,
         custom_4k=custom_4k,

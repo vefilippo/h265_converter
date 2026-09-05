@@ -37,7 +37,7 @@ def _payload(available: set[str], detected_at: str | None) -> dict:
 @router.get("")
 def list_encoders(db: Session = Depends(get_db)):
     """Catalog plus cached availability. Never shells out."""
-    available, detected_at = encoders.load_capabilities(db)
+    available, _unavailable, detected_at = encoders.load_capabilities(db)
     return _payload(available, detected_at)
 
 
@@ -48,7 +48,7 @@ def detect(body: DetectBody, db: Session = Depends(get_db)):
     if not cli:
         return {"ok": False, "error": "HandBrake CLI path is not set", **_payload(set(), None)}
 
-    available, detected_at = encoders.detect_and_store(db, cli)
+    available, _unavailable, detected_at = encoders.detect_and_store(db, cli)
     if not available:
         return {
             "ok": False,

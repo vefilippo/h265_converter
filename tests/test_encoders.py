@@ -1,5 +1,7 @@
 from transcoder import encoders
-from transcoder.encoders import AUTO, CPU, CUSTOM, infer_family, parse_capabilities, resolve
+from transcoder.encoders import (
+    AUTO, CPU, CUSTOM, infer_family, parse_capabilities, parse_unavailable, resolve,
+)
 
 # Captured verbatim from HandBrakeCLI 1.11.2 on an AMD Ryzen 9800X3D / RX 9070 XT
 # box. Real output, not invented: NVENC fails to load, VCN is present, QSV is not.
@@ -20,6 +22,14 @@ NVIDIA_BANNER = """[10:00:00] Compile-time hardening features are enabled
 
 INTEL_BANNER = """[10:00:00] qsv: is available
 [10:00:00] nvenc: not available on this system
+"""
+
+# A recognised banner that mentions vcn but says NOTHING about nvenc — neither
+# "is available" nor "not available on this system". Real HandBrake builds vary,
+# and the positive NVENC/QSV wordings were never observed on real hardware, so
+# "unmentioned" must mean UNKNOWN, not unavailable.
+SILENT_ON_NVENC_BANNER = """[10:00:00] vcn: is available
+[10:00:00] qsv: not available on this system
 """
 
 
@@ -99,7 +109,7 @@ def test_explicit_available_family_is_used_as_is():
 
 
 def test_explicit_unavailable_family_falls_back_to_cpu_when_enabled():
-    r = resolve("nvenc", {"vcn", CPU}, fallback_cpu=True)
+    r = resolve("nvenc", {"vcn", CPU}, {"nvenc"}, fallback_cpu=True)
     assert r.family == CPU
     assert r.requested == "nvenc"
     assert r.substituted is True
@@ -108,7 +118,7 @@ def test_explicit_unavailable_family_falls_back_to_cpu_when_enabled():
 
 
 def test_explicit_unavailable_family_runs_as_configured_when_fallback_disabled():
-    r = resolve("nvenc", {"vcn", CPU}, fallback_cpu=False)
+    r = resolve("nvenc", {"vcn", CPU}, {"nvenc"}, fallback_cpu=False)
     assert r.family == "nvenc"
     assert r.substituted is False
 
@@ -178,3 +188,84 @@ def test_unrecognised_explicit_family_behaves_like_custom():
     r = resolve("vce", {"vcn", CPU})
     assert r.family == CUSTOM
     assert r.requested == "vce"
+
+
+# ── "Unmentioned is unknown", at HandBrake's own reporting granularity ────────
+
+
+def test_parse_unavailable_reads_the_explicit_negatives_from_the_amd_banner():
+    # qsv says so in words; nvenc says so by failing to load its runtime DLL.
+    assert parse_unavailable(AMD_BANNER) == {"qsv", "nvenc"}
+
+
+def test_parse_unavailable_is_empty_for_unrecognisable_output():
+    assert parse_unavailable("") == set()
+    assert parse_unavailable("garbage output") == set()
+
+
+def test_parse_unavailable_ignores_a_positively_reported_family():
+    assert "vcn" not in parse_unavailable(AMD_BANNER)
+
+
+def test_amd_banner_splits_into_available_and_unavailable():
+    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
+    assert parse_unavailable(AMD_BANNER) == {"qsv", "nvenc"}
+
+
+def test_unmentioned_family_is_neither_available_nor_unavailable():
+    assert "nvenc" not in parse_capabilities(SILENT_ON_NVENC_BANNER)
+    assert "nvenc" not in parse_unavailable(SILENT_ON_NVENC_BANNER)
+
+
+def test_explicit_family_unmentioned_by_the_banner_is_not_substituted():
+    """The whole point of FIX 4: under-DETECTION must not cause SUBSTITUTION.
+
+    A banner we parsed successfully but that never mentions nvenc tells us
+    nothing about nvenc. Swapping the user onto a multi-hour CPU x265 encode on
+    that basis is a regression for every NVIDIA user whose banner wording the
+    anchored positive regex happens to miss.
+    """
+    available = parse_capabilities(SILENT_ON_NVENC_BANNER)
+    unavailable = parse_unavailable(SILENT_ON_NVENC_BANNER)
+    r = resolve("nvenc", available, unavailable, fallback_cpu=True)
+    assert r.family == "nvenc"
+    assert r.substituted is False
+    assert r.preset_1080 == "H.265 NVENC 1080p"
+
+
+def test_explicit_family_with_an_explicit_negative_is_substituted():
+    available = parse_capabilities(AMD_BANNER)
+    unavailable = parse_unavailable(AMD_BANNER)
+    r = resolve("nvenc", available, unavailable, fallback_cpu=True)
+    assert r.family == CPU
+    assert r.requested == "nvenc"
+    assert r.substituted is True
+
+
+def test_explicit_negative_is_still_honoured_when_fallback_is_disabled():
+    r = resolve("qsv", {"vcn", CPU}, {"qsv"}, fallback_cpu=False)
+    assert r.family == "qsv"
+    assert r.substituted is False
+
+
+def test_omitted_unavailable_argument_never_substitutes():
+    # Backward-compatible default: callers (and old cached blobs) that know
+    # nothing about negatives must run the configured family as set.
+    r = resolve("nvenc", {"vcn", CPU}, fallback_cpu=True)
+    assert r.family == "nvenc"
+    assert r.substituted is False
+
+
+def test_a_positive_report_beats_a_contradictory_negative():
+    # Substitution is the harmful direction, so a family reported available
+    # wins over a stale/contradictory negative signal in the same blob.
+    r = resolve("nvenc", {"nvenc", CPU}, {"nvenc"}, fallback_cpu=True)
+    assert r.family == "nvenc"
+    assert r.substituted is False
+
+
+def test_auto_selection_ignores_the_unavailable_set():
+    # 'auto' still picks the first AUTO_PRIORITY entry present in `available`.
+    r = resolve(AUTO, {"vcn", CPU}, {"qsv", "nvenc"})
+    assert r.family == "vcn"
+    assert r.substituted is False

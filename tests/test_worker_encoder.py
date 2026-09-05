@@ -60,7 +60,9 @@ def test_worker_falls_back_to_cpu_and_logs_loudly(session, monkeypatch):
     job = _job(session, item)
     set_setting(session, "encoder_family", "nvenc")
     set_setting(session, "encoder_fallback_cpu", "true")
-    encoders.store_capabilities(session, {"vcn", CPU})
+    # The banner explicitly reported nvenc absent — the only thing that may
+    # substitute an encoder away from the user's choice.
+    encoders.store_capabilities(session, {"vcn", CPU}, {"nvenc", "qsv"})
     session.commit()
 
     _run(session, job)
@@ -110,4 +112,21 @@ def test_generic_handbrake_failure_does_not_trigger_cpu_fallback(session, monkey
     _run(session, job, fail=True)
     assert job.state == "failed"
     assert job.preset == "H.265 VCN 1080p"
+    assert "MKV" not in (job.log or "")
+
+
+def test_worker_does_not_fall_back_for_a_family_the_banner_never_mentioned(session, monkeypatch):
+    """Under-detection must not become substitution. nvenc is missing from the
+    cached positives but was never explicitly reported unavailable, so the job
+    runs on NVENC as configured instead of starting an hours-long CPU encode."""
+    _patch_fs(monkeypatch)
+    item = _item(session, resolution=1080)
+    job = _job(session, item)
+    set_setting(session, "encoder_family", "nvenc")
+    set_setting(session, "encoder_fallback_cpu", "true")
+    encoders.store_capabilities(session, {"vcn", CPU}, {"qsv"})
+    session.commit()
+
+    _run(session, job)
+    assert job.preset == "H.265 NVENC 1080p"
     assert "MKV" not in (job.log or "")
