@@ -7,6 +7,11 @@ def test_encoders_requires_auth(api):
     client, _Session = api
     client.post("/api/logout")
     assert client.get("/api/encoders").status_code in (401, 403)
+    # /detect is the only route on this feature that shells out to a subprocess
+    # with a caller-supplied path, so its auth is asserted explicitly: today it
+    # is covered by the router-level dependency, but a later move to per-route
+    # Depends (as routers/settings.py does) could drop it silently.
+    assert client.post("/api/encoders/detect", json={}).status_code in (401, 403)
 
 
 def test_get_encoders_lists_the_catalog(api):
