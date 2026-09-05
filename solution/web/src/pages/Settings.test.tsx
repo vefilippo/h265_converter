@@ -13,7 +13,7 @@ const SETTINGS = {
   sftp_password: "", handbrake_cli: "hb", handbrake_preset_1080: "p1",
   handbrake_preset_4k: "p2", scheduler_next_run: null,
   webhook_username: "", webhook_password_set: false,
-  encoder_family: "auto", encoder_fallback_cpu: "true",
+  encoder_family: "cpu", encoder_fallback_cpu: "false",
 };
 
 const ENCODER_FAMILIES = [
@@ -91,13 +91,7 @@ test("does not send webhook password when untouched", async () => {
         status: 200, headers: { "Content-Type": "application/json" },
       });
     }
-    if (url.includes("/api/settings") && init?.method === "PUT") {
-      captured.body = init.body as string;
-      return new Response(JSON.stringify({ updated: ["webhook_username"] }), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    return makeFetch(captured)(input, init);
   }));
   renderPage();
   const userInput = await screen.findByLabelText(/webhook username/i);
@@ -110,7 +104,7 @@ test("does not send webhook password when untouched", async () => {
 test("encoder dropdown shows the family choices", async () => {
   vi.stubGlobal("fetch", makeFetch({}));
   renderPage();
-  const sel = await screen.findByLabelText(/^encoder$/i);
+  const sel = await screen.findByRole("combobox", { name: /encoder/i });
   expect(sel).toBeInTheDocument();
   expect(screen.getByRole("option", { name: /amd vcn/i })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: /cpu \(x265\)/i })).toBeInTheDocument();
@@ -120,7 +114,7 @@ test("encoder dropdown shows the family choices", async () => {
 test("preset fields are hidden unless Custom is selected", async () => {
   vi.stubGlobal("fetch", makeFetch({}));
   renderPage();
-  const sel = await screen.findByLabelText(/^encoder$/i);
+  const sel = await screen.findByRole("combobox", { name: /encoder/i });
   expect(screen.queryByLabelText(/1080p preset/i)).not.toBeInTheDocument();
   fireEvent.change(sel, { target: { value: "custom" } });
   expect(screen.getByLabelText(/1080p preset/i)).toBeInTheDocument();
@@ -131,12 +125,29 @@ test("saving the encoder section sends the family and fallback flag", async () =
   const captured: { body?: string } = {};
   vi.stubGlobal("fetch", makeFetch(captured));
   renderPage();
-  const sel = await screen.findByLabelText(/^encoder$/i);
+  const sel = await screen.findByRole("combobox", { name: /encoder/i });
   fireEvent.change(sel, { target: { value: "vcn" } });
   fireEvent.click(screen.getByRole("button", { name: /save encoder settings/i }));
   await waitFor(() => expect(captured.body).toBeTruthy());
   const body = JSON.parse(captured.body!);
   expect(body.encoder_family).toBe("vcn");
+  // Fixture hydrates encoder_fallback_cpu: "false" and the checkbox is left
+  // untouched here — proves the untouched hydrated value round-trips as-is.
+  expect(body.encoder_fallback_cpu).toBe("false");
+});
+
+test("toggling the fallback checkbox flips the saved string", async () => {
+  const captured: { body?: string } = {};
+  vi.stubGlobal("fetch", makeFetch(captured));
+  renderPage();
+  await screen.findByRole("combobox", { name: /encoder/i });
+  const checkbox = screen.getByRole("checkbox", { name: /fall back to cpu x265/i });
+  expect(checkbox).not.toBeChecked();
+  fireEvent.click(checkbox);
+  expect(checkbox).toBeChecked();
+  fireEvent.click(screen.getByRole("button", { name: /save encoder settings/i }));
+  await waitFor(() => expect(captured.body).toBeTruthy());
+  const body = JSON.parse(captured.body!);
   expect(body.encoder_fallback_cpu).toBe("true");
 });
 
@@ -145,7 +156,7 @@ test("no availability badges are shown before detection has run", async () => {
   // because nobody has clicked Detect yet.
   vi.stubGlobal("fetch", makeFetch({}));
   renderPage();
-  await screen.findByLabelText(/^encoder$/i);
+  await screen.findByRole("combobox", { name: /encoder/i });
   expect(screen.queryByTestId("enc-avail-vcn")).not.toBeInTheDocument();
 });
 
@@ -165,7 +176,7 @@ test("warns when the chosen family is known to be unavailable", async () => {
   vi.stubGlobal("fetch", makeFetch({}));
   renderPage();
   fireEvent.click(await screen.findByRole("button", { name: /detect/i }));
-  const sel = await screen.findByLabelText(/^encoder$/i);
+  const sel = await screen.findByRole("combobox", { name: /encoder/i });
   fireEvent.change(sel, { target: { value: "nvenc" } });
   expect(await screen.findByRole("alert")).toHaveTextContent(/not available/i);
 });

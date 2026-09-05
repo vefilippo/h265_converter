@@ -271,7 +271,7 @@ export default function Settings() {
 
   // Only warn when detection actually ran: unknown is not unavailable.
   const detected = !!encInfo?.detected_at;
-  const chosen = encInfo?.families?.find(f => f.id === encFamily);
+  const chosen = encInfo?.families.find(f => f.id === encFamily);
   const familyUnavailable = detected && !!chosen && !chosen.available;
 
   const cronDescription = cron ? cronDesc(cron) : '';
@@ -458,14 +458,11 @@ export default function Settings() {
         </Card>
       </section>
 
-      {/* ── Encoder ──
-          aria-label (not aria-labelledby) here: the section's own accessible
-          name must not collide with the "Encoder" <label> on the family
-          <select> below, or byLabelText queries become ambiguous. */}
-      <section aria-label="Encoder settings" className="mb-6">
+      {/* ── Encoder ── */}
+      <section aria-labelledby="enc-heading" className="mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
-            <h2 className="font-display text-lg text-fg">Encoder</h2>
+            <h2 id="enc-heading" className="font-display text-lg text-fg">Encoder</h2>
             {transDirty && <DirtyDot />}
           </CardHeader>
           <CardContent className="space-y-4 pt-5">
@@ -491,7 +488,7 @@ export default function Settings() {
                 {detecting ? 'Detecting…' : 'Detect'}
               </Button>
               {/* Only after a real probe — an undetected host is unknown, not empty. */}
-              {detected && encInfo?.families?.map(f => (
+              {detected && encInfo?.families.map(f => (
                 <Badge key={f.id} data-testid={`enc-avail-${f.id}`}
                   variant={f.available ? 'done' : 'neutral'}>
                   {f.label}: {f.available ? 'available' : 'not available'}
