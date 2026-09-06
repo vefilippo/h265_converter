@@ -2,6 +2,9 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_0.label": "Encoder support and reliable restore",
+    "changelog.1_1_0.entry.installer_port":
+      "Choose the dashboard port during installation with a live availability check. The tray launcher respects the chosen port and waits for the server before opening the dashboard; fresh-install startup and occupied-port handling are also fixed.",
     "changelog.1_1_0.entry.restore_restart":
       "Backup restore now restarts the server and applies saved jobs, library, exclusions and settings. The dashboard waits for the restart instead of reloading unchanged data.",
     "changelog.1_1_0.entry.encoder_family":
