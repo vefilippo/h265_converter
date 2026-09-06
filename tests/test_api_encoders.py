@@ -94,3 +94,25 @@ def test_detect_errors_when_no_cli_configured(api, monkeypatch):
     body = client.post("/api/encoders/detect", json={}).json()
     assert body["ok"] is False
     assert "not set" in body["error"].lower()
+
+
+def test_encoders_response_shape_and_order(api):
+    client, _ = api
+    r = client.get("/api/encoders")
+    assert r.status_code == 200
+    body = r.json()
+    assert [f["id"] for f in body["families"]] == ["vcn", "nvenc", "qsv", "cpu"]
+    assert set(body) == {"available", "detected_at", "families"}
+    for f in body["families"]:
+        assert set(f) == {"id", "label", "preset_1080", "preset_4k", "hardware", "available"}
+
+
+def test_encoders_routes_declare_response_models():
+    """The shape is a hard contract for committed frontend code; without a
+    response_model it is absent from OpenAPI and unchecked by pydantic."""
+    from transcoder.api.app import create_app
+
+    schema = create_app(start_worker=False).openapi()
+    get_op = schema["paths"]["/api/encoders"]["get"]
+    assert "application/json" in get_op["responses"]["200"]["content"]
+    assert "$ref" in str(get_op["responses"]["200"]["content"]["application/json"]["schema"])
