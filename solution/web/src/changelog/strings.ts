@@ -2,6 +2,8 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_0.entry.encoder_family":
+      "The HandBrake encoder is now a detected, selectable setting: AMD VCN, NVIDIA NVENC, Intel QSV, CPU x265 or your own presets, with an Auto mode that picks the best encoder your machine actually reports. Fresh installs on AMD or Intel hardware no longer fail every job on hardcoded NVENC presets.",
     "changelog.1_0_1.label": "Jobs list fixes",
     "changelog.1_0_1.entry.jobs_newest_first":
       "Jobs page now lists the newest jobs first and paginates: recent jobs (including movies) no longer disappear once the table grows past 100 entries.",
