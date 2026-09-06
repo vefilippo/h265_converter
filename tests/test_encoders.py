@@ -185,7 +185,9 @@ def test_explicit_cpu_is_never_reported_as_substituted():
 
 
 def test_unrecognised_explicit_family_behaves_like_custom():
-    r = resolve("vce", {"vcn", CPU})
+    # Non-blank presets: the blank-preset fallback-to-CPU path is covered
+    # separately by test_unrecognised_family_with_blank_presets_falls_back_to_cpu.
+    r = resolve("vce", {"vcn", CPU}, custom_1080="Fast 1080p30", custom_4k="Fast 2160p60")
     assert r.family == CUSTOM
     assert r.requested == "vce"
 
@@ -278,3 +280,37 @@ def test_nvenc_dll_line_alone_is_a_recognised_banner():
     banner = "[11:44:47] Cannot load nvEncodeAPI64.dll\nHandBrake 1.11.2\n"
     assert encoders.parse_capabilities(banner) == {"cpu"}
     assert encoders.parse_unavailable(banner) == {"nvenc"}
+
+
+# ── Blank custom presets must not reach HandBrake ─────────────────────────────
+
+
+def test_custom_with_blank_presets_falls_back_to_cpu():
+    """Handing HandBrake --preset "" fails the job with an opaque error. CPU
+    x265 is slow but correct, and substituted=True makes the swap visible in
+    the job log."""
+    r = encoders.resolve("custom", {"vcn", "cpu"}, custom_1080="", custom_4k="")
+    assert (r.preset_1080, r.preset_4k) == ("H.265 MKV 1080p30", "H.265 MKV 2160p60 4K")
+    assert r.family == "cpu"
+    assert r.requested == "custom"
+    assert r.substituted is True
+
+
+def test_custom_with_one_blank_preset_falls_back_to_cpu():
+    r = encoders.resolve("custom", {"cpu"}, custom_1080="Fast 1080p30", custom_4k="   ")
+    assert r.family == "cpu"
+    assert r.substituted is True
+
+
+def test_custom_with_both_presets_set_is_untouched():
+    r = encoders.resolve("custom", {"cpu"}, custom_1080="Fast 1080p30", custom_4k="Fast 2160p60")
+    assert (r.preset_1080, r.preset_4k) == ("Fast 1080p30", "Fast 2160p60")
+    assert r.family == "custom"
+    assert r.substituted is False
+
+
+def test_unrecognised_family_with_blank_presets_falls_back_to_cpu():
+    r = encoders.resolve("wat", {"cpu"}, custom_1080="", custom_4k="")
+    assert r.family == "cpu"
+    assert r.requested == "wat"
+    assert r.substituted is True

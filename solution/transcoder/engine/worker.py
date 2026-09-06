@@ -113,7 +113,12 @@ def process_one_job(
         session.commit()
         job_log(session, job, f"Transcoding {item.title} (preset {job.preset})")
         if resolution.substituted:
-            requested = FAMILIES[resolution.requested]["label"]
+            # requested can now be "custom" or an unrecognised stored value
+            # (encoders.resolve's blank-custom-preset fallback), neither of
+            # which is a FAMILIES key -- fall back to the raw value itself.
+            requested = FAMILIES.get(resolution.requested, {}).get(
+                "label", resolution.requested
+            )
             job_log(
                 session, job,
                 f"{requested} is not available on this host; falling back to "

@@ -144,6 +144,20 @@ def _presets(family: str) -> tuple[str, str]:
     return meta["preset_1080"], meta["preset_4k"]
 
 
+def _custom_or_cpu(custom_1080: str, custom_4k: str, requested: str,
+                    unknown: bool) -> Resolution:
+    """Custom presets, unless either is blank -- an empty --preset argument
+    fails the job with an opaque HandBrake error, so fall back to CPU and mark
+    the swap so the worker logs it."""
+    if not (custom_1080 or "").strip() or not (custom_4k or "").strip():
+        log.warning(
+            "Custom encoder selected but presets are blank; using CPU x265 presets"
+        )
+        p1080, p4k = _presets(CPU)
+        return Resolution(p1080, p4k, CPU, requested, True, unknown)
+    return Resolution(custom_1080, custom_4k, CUSTOM, requested, False, unknown)
+
+
 def resolve(
     family: str,
     available: set[str],
@@ -167,7 +181,7 @@ def resolve(
     unknown = not available
 
     if family == CUSTOM:
-        return Resolution(custom_1080, custom_4k, CUSTOM, CUSTOM, False, unknown)
+        return _custom_or_cpu(custom_1080, custom_4k, CUSTOM, unknown)
 
     if family == AUTO:
         if unknown:
@@ -186,7 +200,7 @@ def resolve(
 
     if family not in FAMILIES:
         # Defensive: an unrecognised stored value behaves like custom.
-        return Resolution(custom_1080, custom_4k, CUSTOM, family, False, unknown)
+        return _custom_or_cpu(custom_1080, custom_4k, family, unknown)
 
     # Substitute ONLY on an explicit negative. A positive report wins over a
     # contradictory negative in the same blob: substitution is the harmful

@@ -115,6 +115,26 @@ def test_generic_handbrake_failure_does_not_trigger_cpu_fallback(session, monkey
     assert "MKV" not in (job.log or "")
 
 
+def test_worker_logs_custom_substitution_without_a_keyerror(session, monkeypatch):
+    """A blank custom preset now resolves with substituted=True and
+    requested="custom" (encoders.resolve), which is not a key in FAMILIES. The
+    worker's substitution log line indexes FAMILIES[resolution.requested] --
+    verify it degrades gracefully instead of raising KeyError."""
+    _patch_fs(monkeypatch)
+    item = _item(session, resolution=1080)
+    job = _job(session, item)
+    set_setting(session, "encoder_family", "custom")
+    set_setting(session, "handbrake_preset_1080", "")
+    set_setting(session, "handbrake_preset_4k", "")
+    encoders.store_capabilities(session, {"vcn", CPU})
+    session.commit()
+
+    _run(session, job)
+    assert job.preset == "H.265 MKV 1080p30"
+    assert "custom" in job.log.lower()
+    assert "slower" in job.log.lower()
+
+
 def test_worker_does_not_fall_back_for_a_family_the_banner_never_mentioned(session, monkeypatch):
     """Under-detection must not become substitution. nvenc is missing from the
     cached positives but was never explicitly reported unavailable, so the job
