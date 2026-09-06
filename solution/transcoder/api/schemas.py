@@ -1,6 +1,21 @@
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from transcoder.encoders import AUTO, CUSTOM, FAMILIES
+
+# Built from the catalog so a new family cannot be added to encoders.py and
+# then be silently rejected by the API it is supposed to be selectable through.
+# `Literal[<tuple>]` is the standard runtime spelling of `Literal[a, b, ...]`
+# (subscription unpacks a tuple), but static checkers cannot follow a
+# non-constant subscript -- hence the ignore. `tests/test_api_settings_encoder.py`
+# pins the resulting member set against the catalog either way.
+#
+# Importing the catalog here is safe: transcoder.encoders only imports
+# transcoder.config at module scope. Its transcoder.repo/db imports are
+# function-local precisely because transcoder.db builds an engine on import.
+EncoderFamilyId = Literal[tuple([AUTO, *FAMILIES.keys(), CUSTOM])]  # type: ignore[valid-type]
 
 
 class MediaItemOut(BaseModel):
@@ -177,7 +192,12 @@ class SettingsUpdate(BaseModel):
     handbrake_cli: str | None = None
     handbrake_preset_1080: str | None = None
     handbrake_preset_4k: str | None = None
-    encoder_family: str | None = None
+    # Constrained so an unrecognised family is rejected with 422 before the
+    # router's untyped simple_fields loop can persist it. A stored bad value is
+    # sticky, and resolve() routes it down the CUSTOM branch onto whatever
+    # presets happen to be stored -- the NVENC defaults on a fresh install --
+    # which fails every job on AMD or Intel hardware.
+    encoder_family: EncoderFamilyId | None = None
     encoder_fallback_cpu: str | None = None
     current_password: str | None = None
     new_password: str | None = None

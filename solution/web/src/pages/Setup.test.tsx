@@ -103,3 +103,42 @@ test("wizard saves the detected family with the CLI path", async () => {
     expect(JSON.parse((put![1] as RequestInit).body as string).encoder_family).toBe("vcn");
   });
 });
+
+test("Save & continue is disabled while detection is in flight", async () => {
+  let resolveDetect: (value: Response) => void = () => {};
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/encoders/detect")) {
+      return new Promise<Response>((resolve) => { resolveDetect = resolve; });
+    }
+    return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  }));
+
+  await gotoHandbrakeStep();
+  await userEvent.click(await screen.findByRole("button", { name: /detect/i }));
+
+  expect(screen.getByRole("button", { name: /save & continue/i })).toBeDisabled();
+
+  resolveDetect(new Response(JSON.stringify(DETECT_OK), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  }));
+  await screen.findByText(/Found AMD VCN/i);
+});
+
+test("skipping detection does not write an encoder family", async () => {
+  let putBody: string | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/settings") && init?.method === "PUT") {
+      putBody = init.body as string;
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }));
+
+  await gotoHandbrakeStep();
+  await userEvent.type(screen.getByPlaceholderText(/HandBrakeCLI/i), "C:/hb.exe");
+  await userEvent.click(screen.getByRole("button", { name: /save & continue/i }));
+
+  await waitFor(() => expect(putBody).toBeTruthy());
+  expect(JSON.parse(putBody!)).toEqual({ handbrake_cli: "C:/hb.exe" });
+});
