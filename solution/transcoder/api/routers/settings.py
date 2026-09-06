@@ -7,6 +7,7 @@ from transcoder.api.auth import require_auth
 from transcoder.api.deps import get_session as get_db
 from transcoder.api import state
 from transcoder.api.schemas import SettingsOut, SettingsUpdate
+from transcoder import encoders as _enc
 from transcoder.encoders import FAMILY_KEY, FALLBACK_KEY
 from transcoder.repo import get_setting, set_setting, get_effective
 from transcoder.scheduler import SchedulerController
@@ -55,6 +56,9 @@ def get_settings(db: Session = Depends(get_db)):
 def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     cfg = _cfg.settings
     updated: list[str] = []
+
+    # Read before the simple_fields loop below overwrites it.
+    previous_cli = get_setting(db, "handbrake_cli")
 
     if body.new_password is not None:
         current_hash = get_setting(db, "app_password_hash")
@@ -106,6 +110,17 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         schedule_changed = True
     if body.scheduler_run_at_startup is not None:
         schedule_changed = True
+
+    new_cli = getattr(body, "handbrake_cli", None)
+    if new_cli is not None and new_cli not in ("", _REDACTED) and new_cli != previous_cli:
+        # The cached families were probed against the OLD binary, so 'auto' could
+        # resolve to a family the new one lacks and an explicit family would miss
+        # its CPU fallback. Blank the blob (a falsy raw value reads as unknown to
+        # load_capabilities) rather than deleting the row, mirroring the
+        # post-restore clear, and drop the process-local memo too.
+        set_setting(db, _enc.CAPABILITIES_KEY, "")
+        _enc.reset_probe_cache()
+        updated.append("encoder_capabilities_cleared")
 
     db.commit()
 

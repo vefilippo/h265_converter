@@ -112,3 +112,60 @@ def test_settings_update_family_annotation_is_a_literal():
     assert literals, "encoder_family must be a constrained union, not a bare str"
     for arg in literals:
         assert getattr(arg, "__origin__", None) is Literal
+
+
+# --- capability cache invalidation on a HandBrake path change ---------------
+#
+# Detection results are cached in the `encoder_capabilities` setting. If the
+# user later edits the HandBrake CLI path, that cache still describes the OLD
+# binary: `auto` can resolve to a family the new binary does not have, and an
+# explicitly chosen family will NOT get the CPU fallback because it still looks
+# available. Same hazard as the post-restore clear, reached another way.
+
+
+def test_changing_the_handbrake_path_clears_the_capability_cache(api):
+    """A family probed against a different binary must not persist."""
+    client, Session = api
+    from transcoder.repo import set_setting
+    from transcoder.encoders import CAPABILITIES_KEY
+
+    with Session() as s:
+        set_setting(s, "handbrake_cli", "C:/old/HandBrakeCLI.exe")
+        set_setting(s, CAPABILITIES_KEY, '{"available":["nvenc","cpu"],"detected_at":"x"}')
+        s.commit()
+
+    client.put("/api/settings", json={"handbrake_cli": "C:/new/HandBrakeCLI.exe"})
+
+    with Session() as s:
+        assert not get_setting(s, CAPABILITIES_KEY)
+
+
+def test_resaving_the_same_handbrake_path_keeps_the_cache(api):
+    """Only an actual change invalidates -- saving the settings form unchanged
+    must not force a re-probe."""
+    client, Session = api
+    from transcoder.repo import set_setting
+    from transcoder.encoders import CAPABILITIES_KEY
+
+    blob = '{"available":["vcn","cpu"],"detected_at":"x"}'
+    with Session() as s:
+        set_setting(s, "handbrake_cli", "C:/hb/HandBrakeCLI.exe")
+        set_setting(s, CAPABILITIES_KEY, blob)
+        s.commit()
+
+    client.put("/api/settings", json={"handbrake_cli": "C:/hb/HandBrakeCLI.exe"})
+
+    with Session() as s:
+        assert get_setting(s, CAPABILITIES_KEY) == blob
+
+
+def test_changing_the_path_also_resets_the_process_memo(api, monkeypatch):
+    """The in-memory memo is keyed on the CLI path but caches 'unknown' for the
+    old binary; without this it keeps answering after the path is edited."""
+    from transcoder import encoders
+
+    called = []
+    monkeypatch.setattr(encoders, "reset_probe_cache", lambda: called.append(True))
+    client, _Session = api
+    client.put("/api/settings", json={"handbrake_cli": "C:/another/HandBrakeCLI.exe"})
+    assert called
