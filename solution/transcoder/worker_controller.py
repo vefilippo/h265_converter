@@ -11,7 +11,8 @@ class WorkerController:
     """Continuous background worker: drains queued jobs one at a time.
 
     session_factory: callable returning a new Session (e.g. SessionLocal).
-    clients: {"sonarr": SonarrClient, "radarr": RadarrClient}.
+    clients: {"sonarr": SonarrClient, "radarr": RadarrClient}, or a
+        zero-argument callable returning one (resolved on first use).
     process: per-job processor (injected for tests); defaults to process_one_job.
     idle_timeout: seconds the loop waits on the wake event when the queue is empty.
     """
@@ -49,6 +50,17 @@ class WorkerController:
 
     def wake(self):
         self._wake.set()
+
+    # --- clients ---
+    @property
+    def clients(self) -> dict:
+        """Resolved on first use. state.py passes the FACTORY, not a dict, so
+        that importing the API never opens the database -- on a fresh install
+        the tables do not exist until the lifespan runs init_db()."""
+        with self._lock:
+            if callable(self._clients):
+                self._clients = self._clients()
+            return self._clients
 
     # --- introspection ---
     @property
@@ -112,7 +124,7 @@ class WorkerController:
                     session.refresh(job)
                     if job.state == "cancelled":
                         continue
-                    self._process(session, job, self._clients, cancel_event=cancel_event)
+                    self._process(session, job, self.clients, cancel_event=cancel_event)
                 except Exception:  # noqa: BLE001 — never let one job kill the loop
                     log.exception("worker: job %s crashed", job_id)
                 finally:

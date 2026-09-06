@@ -76,7 +76,10 @@ class ScanStatus:
 
 
 # Singletons (constructed once at import).
-controller = WorkerController(SessionLocal, build_clients())
+# Pass build_clients itself, NOT build_clients(): this module is imported at
+# app import time, before the lifespan has run init_db(), so a fresh install
+# has no tables yet and querying `setting` here kills the process at import.
+controller = WorkerController(SessionLocal, build_clients)
 scan_status = ScanStatus()
 
 from transcoder.scheduler import SchedulerController
