@@ -314,3 +314,9 @@ def test_unrecognised_family_with_blank_presets_falls_back_to_cpu():
     assert r.family == "cpu"
     assert r.requested == "wat"
     assert r.substituted is True
+
+
+def test_banner_parsing_is_case_insensitive():
+    banner = "[11:44:47] VCN: IS AVAILABLE\n[11:44:47] QSV: NOT AVAILABLE ON THIS SYSTEM\n"
+    assert encoders.parse_capabilities(banner) == {"vcn", "cpu"}
+    assert encoders.parse_unavailable(banner) == {"qsv"}

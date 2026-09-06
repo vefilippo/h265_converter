@@ -276,3 +276,26 @@ def test_migrate_ignores_config_family_for_an_upgraded_install(session, monkeypa
     set_setting(session, "handbrake_preset_4k", "H.265 NVENC 2160p 4K")
     session.commit()
     assert migrate_encoder_family(session) == "nvenc"
+
+
+def test_probe_result_survives_commit_and_is_reused(session, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        encoders, "probe",
+        lambda cli, timeout=30.0: (calls.append(cli), ({"vcn", "cpu"}, {"qsv"}))[1],
+    )
+    encoders.reset_probe_cache()
+
+    available, _u, detected_at = encoders.get_or_detect_capabilities(session, "hb.exe")
+    assert available == {"vcn", "cpu"} and detected_at is not None
+    session.commit()
+
+    again = encoders.get_or_detect_capabilities(session, "hb.exe")
+    assert again[0] == {"vcn", "cpu"}
+    assert len(calls) == 1, "second read must come from the committed cache"
+
+
+def test_migrate_uses_empty_string_when_only_the_1080_preset_exists(session):
+    set_setting(session, "handbrake_preset_1080", "H.265 NVENC 1080p")
+    session.commit()
+    assert migrate_encoder_family(session) == CUSTOM
