@@ -291,3 +291,10 @@ def test_banner_parsing_is_case_insensitive():
     banner = "[11:44:47] VCN: IS AVAILABLE\n[11:44:47] QSV: NOT AVAILABLE ON THIS SYSTEM\n"
     assert encoders.parse_capabilities(banner) == {"vcn", "cpu"}
     assert encoders.parse_unavailable(banner) == {"qsv"}
+
+
+def test_parse_unavailable_reads_vcn_and_nvenc_negatives():
+    """parse_unavailable was only ever asserted on qsv negatives, so the vcn
+    and nvenc alternatives of the regex had no coverage in this wording."""
+    assert encoders.parse_unavailable(NVIDIA_BANNER) == {"vcn", "qsv"}
+    assert encoders.parse_unavailable(INTEL_BANNER) == {"nvenc"}
