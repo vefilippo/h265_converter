@@ -21,7 +21,6 @@ AUTO = "auto"
 CUSTOM = "custom"
 CPU = "cpu"
 
-
 from transcoder.config import settings as cfg
 
 # Preset names are verbatim from HandBrakeCLI 1.11.2 --preset-list. Note that
@@ -228,9 +227,6 @@ def infer_family(preset_1080: str, preset_4k: str) -> str:
     return CUSTOM
 
 
-log = logging.getLogger("transcoder")
-
-
 def probe(handbrake_cli: str, timeout: float = 30.0) -> tuple[set[str], set[str]]:
     """Ask HandBrake what it can encode with, by running ``--version``.
 
@@ -393,7 +389,6 @@ def get_or_detect_capabilities(
 def resolve_for_job(session) -> Resolution:
     """Resolve the preset pair for a job from stored settings + capabilities."""
     from transcoder.repo import get_effective
-    from transcoder.config import settings as cfg
 
     family = get_effective(session, FAMILY_KEY, cfg.ENCODER_FAMILY)
     fallback = get_effective(session, FALLBACK_KEY, "true") == "true"
