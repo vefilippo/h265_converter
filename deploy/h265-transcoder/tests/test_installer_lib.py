@@ -125,3 +125,116 @@ def test_payload_should_ship_only_solution_tree():
 def test_payload_dest_preserves_relative_tree_under_dest_root():
     dest = lib.payload_dest("solution/transcoder/api/app.py", os.path.join("build", "payload"))
     assert pathlib.Path(dest) == pathlib.Path("build/payload/solution/transcoder/api/app.py")
+
+
+# --- port_is_free / first_free_port -----------------------------------------
+#
+# port_is_free duplicates the tiny connect_ex probe in
+# transcoder/api/__main__.py deliberately: deploy/ is a separate toolchain
+# that runs before the app's own venv (and thus transcoder package) exists,
+# so it cannot import from solution/. See CLAUDE.md's solution-deploy-layout
+# note on the two toolchains being separate.
+
+def test_port_is_free_true_when_nothing_listens():
+    # Extremely unlikely to have a real listener on this high port during tests.
+    assert lib.port_is_free(58631) is True
+
+
+def test_port_is_free_false_when_something_listens():
+    import socket
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    try:
+        assert lib.port_is_free(port) is False
+    finally:
+        srv.close()
+
+
+def test_first_free_port_returns_start_when_free():
+    assert lib.first_free_port(start=58631, limit=5) == 58631
+
+
+def test_first_free_port_skips_occupied_ports():
+    import socket
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    try:
+        assert lib.first_free_port(start=port, limit=5) != port
+    finally:
+        srv.close()
+
+
+def test_first_free_port_returns_none_when_all_taken(monkeypatch):
+    monkeypatch.setattr(lib, "port_is_free", lambda port, host="127.0.0.1": False)
+    assert lib.first_free_port(start=8765, limit=20) is None
+
+
+# --- upsert_env_var -----------------------------------------------------
+
+def test_upsert_env_var_empty_content_produces_one_line():
+    assert lib.upsert_env_var("", "API_PORT", "8765") == "API_PORT=8765\n"
+
+
+def test_upsert_env_var_replaces_existing_key_in_place():
+    text = "SONARR_API_KEY=abc\nAPI_PORT=8765\nRADARR_API_KEY=def\n"
+    got = lib.upsert_env_var(text, "API_PORT", "9000")
+    lines = got.splitlines()
+    assert lines == ["SONARR_API_KEY=abc", "API_PORT=9000", "RADARR_API_KEY=def"]
+
+
+def test_upsert_env_var_preserves_unrelated_lines_byte_for_byte():
+    text = "# a comment\nSONARR_API_KEY=abc\n\nSFTP_PASSWORD=hunter2\n"
+    got = lib.upsert_env_var(text, "API_PORT", "8765")
+    for line in ["# a comment", "SONARR_API_KEY=abc", "", "SFTP_PASSWORD=hunter2"]:
+        assert line in got.splitlines()
+
+
+def test_upsert_env_var_no_trailing_newline_does_not_join_lines():
+    text = "SONARR_API_KEY=abc"
+    got = lib.upsert_env_var(text, "API_PORT", "8765")
+    lines = got.splitlines()
+    assert lines == ["SONARR_API_KEY=abc", "API_PORT=8765"]
+
+
+def test_upsert_env_var_commented_out_key_is_not_replaced():
+    text = "#API_PORT=9000\n"
+    got = lib.upsert_env_var(text, "API_PORT", "8765")
+    lines = got.splitlines()
+    assert "#API_PORT=9000" in lines
+    assert "API_PORT=8765" in lines
+    assert len(lines) == 2
+
+
+def test_upsert_env_var_recognises_key_with_surrounding_whitespace():
+    text = "  API_PORT = 8765  \n"
+    got = lib.upsert_env_var(text, "API_PORT", "9000")
+    lines = got.splitlines()
+    assert lines == ["API_PORT=9000"]
+
+
+def test_upsert_env_var_preserves_crlf_line_endings():
+    text = "SONARR_API_KEY=abc\r\nAPI_PORT=8765\r\n"
+    got = lib.upsert_env_var(text, "API_PORT", "9000")
+    assert got == "SONARR_API_KEY=abc\r\nAPI_PORT=9000\r\n"
+
+
+def test_upsert_env_var_crlf_content_appends_new_key_with_crlf():
+    text = "SONARR_API_KEY=abc\r\n"
+    got = lib.upsert_env_var(text, "API_PORT", "8765")
+    assert got == "SONARR_API_KEY=abc\r\nAPI_PORT=8765\r\n"
+
+
+def test_upsert_env_var_duplicate_key_replaces_first_and_drops_rest():
+    # Decision: on a duplicate key, keep the FIRST occurrence's position (so
+    # unrelated surrounding lines keep their order) and drop later duplicates,
+    # rather than leaving two live (ambiguous) or appending a third.
+    text = "API_PORT=1111\nSONARR_API_KEY=abc\nAPI_PORT=2222\n"
+    got = lib.upsert_env_var(text, "API_PORT", "9000")
+    lines = got.splitlines()
+    assert lines == ["API_PORT=9000", "SONARR_API_KEY=abc"]
