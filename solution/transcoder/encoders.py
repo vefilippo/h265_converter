@@ -15,13 +15,14 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from transcoder.config import settings as cfg
+
 log = logging.getLogger("transcoder")
 
 AUTO = "auto"
 CUSTOM = "custom"
 CPU = "cpu"
 
-from transcoder.config import settings as cfg
 
 # Preset names are verbatim from HandBrakeCLI 1.11.2 --preset-list. Note that
 # AMD presets are named "VCN" (HandBrake 1.11 renamed them) even though the
