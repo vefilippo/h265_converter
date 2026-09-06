@@ -269,3 +269,12 @@ def test_auto_selection_ignores_the_unavailable_set():
     r = resolve(AUTO, {"vcn", CPU}, {"qsv", "nvenc"})
     assert r.family == "vcn"
     assert r.substituted is False
+
+
+def test_nvenc_dll_line_alone_is_a_recognised_banner():
+    """The real-world NVIDIA-missing banner has no '<family>:' line at all.
+    It must still count as 'we understood this banner', otherwise a working
+    AMD box with no NVIDIA runtime would report unknown."""
+    banner = "[11:44:47] Cannot load nvEncodeAPI64.dll\nHandBrake 1.11.2\n"
+    assert encoders.parse_capabilities(banner) == {"cpu"}
+    assert encoders.parse_unavailable(banner) == {"nvenc"}

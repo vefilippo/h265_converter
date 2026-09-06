@@ -15,9 +15,14 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+log = logging.getLogger("transcoder")
+
 AUTO = "auto"
 CUSTOM = "custom"
 CPU = "cpu"
+
+
+from transcoder.config import settings as cfg
 
 # Preset names are verbatim from HandBrakeCLI 1.11.2 --preset-list. Note that
 # AMD presets are named "VCN" (HandBrake 1.11 renamed them) even though the
@@ -84,7 +89,9 @@ _NVENC_DLL_RE = re.compile(r"Cannot load nvEncodeAPI64\.dll", re.IGNORECASE)
 # not understand the output — an older/newer HandBrake with a different format,
 # or some other executable that happens to exit 0 — and must report unknown
 # rather than a confident (and wrong) {cpu}. See parse_capabilities().
-_BANNER_MENTIONS_RE = re.compile(r"(vcn|nvenc|qsv|nvEncodeAPI)", re.IGNORECASE)
+# "nvEncodeAPI64.dll" already contains "nvEnc", which the nvenc alternative
+# matches case-insensitively, so it needs no alternative of its own.
+_BANNER_MENTIONS_RE = re.compile(r"(vcn|nvenc|qsv)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -281,6 +288,10 @@ def store_capabilities(
     unavailable: set[str] | frozenset[str] = frozenset(),
 ) -> str:
     """Cache a probe result; returns the ISO-8601 detection timestamp."""
+    # transcoder.repo pulls in transcoder.db, which constructs a SQLAlchemy
+    # engine at import time. Importing it at module scope would make merely
+    # importing this catalog open a database connection, so the repo imports
+    # stay function-local. transcoder.config has no such side effect.
     from transcoder.repo import set_setting
 
     detected_at = datetime.now(timezone.utc).isoformat()
@@ -319,8 +330,8 @@ def get_or_detect_capabilities(
 
 def resolve_for_job(session) -> Resolution:
     """Resolve the preset pair for a job from stored settings + capabilities."""
-    from transcoder.config import settings as cfg
     from transcoder.repo import get_effective
+    from transcoder.config import settings as cfg
 
     family = get_effective(session, FAMILY_KEY, cfg.ENCODER_FAMILY)
     fallback = get_effective(session, FALLBACK_KEY, "true") == "true"
@@ -347,7 +358,6 @@ def migrate_encoder_family(session) -> str | None:
     setup. The presence of `handbrake_preset_1080` in the DB is therefore the
     signal for "this install predates encoder families".
     """
-    from transcoder.config import settings as cfg
     from transcoder.repo import get_setting, set_setting
 
     if get_setting(session, FAMILY_KEY) is not None:

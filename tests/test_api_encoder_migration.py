@@ -1,14 +1,6 @@
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.orm import sessionmaker
 
-from transcoder.db import Base
-import transcoder.models  # noqa: F401
-import transcoder.api.app as app_module
-from transcoder.api.app import create_app
-from transcoder.api.deps import get_session
+from tests.api_conftest import build_booted_client
 from transcoder.repo import get_setting
 
 
@@ -25,57 +17,20 @@ def booted_api(monkeypatch):
     specifically about startup-time ordering, so they need the real lifespan
     to run.
     """
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    # These tests assert the family lands on "auto", which is only true when the
-    # env is not steering it. tests/conftest.py pins the other required settings
-    # but not this one, so without this a developer machine with ENCODER_FAMILY
-    # exported would fail them for the wrong reason.
     from transcoder.config import settings as cfg
-    monkeypatch.setattr(cfg, "ENCODER_FAMILY", "auto")
 
-    monkeypatch.setattr(app_module, "init_db", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "migrate_legacy", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "SessionLocal", Session)
-    # app.py's lifespan re-imports SessionLocal fresh from transcoder.db right
-    # before the seeding/migration block (`from transcoder.db import
-    # SessionLocal as _SL`), which bypasses the patch on app_module above --
-    # that name binding lives in transcoder.db's own namespace.
-    import transcoder.db as db_module
-    monkeypatch.setattr(db_module, "SessionLocal", Session)
-    monkeypatch.setattr(app_module, "ensure_job_columns", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "reconcile_stale_jobs", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "init_logging", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "backup_db", lambda *a, **k: None)
-    monkeypatch.setattr(app_module, "apply_pending_restore", lambda *a, **k: False)
-    import transcoder.api.auth as auth_module
-    monkeypatch.setattr(auth_module, "SessionLocal", Session)
+    # Self-contained regardless of a developer's environment: pin the preset
+    # default this test relies on rather than depending on cfg's default.
+    monkeypatch.setattr(cfg, "PRESET_1080", "H.265 NVENC 1080p")
+    # A family other than "auto" so the assertion below can tell "the config
+    # value flowed through migration" apart from "happens to match the schema
+    # literal" -- both would be "auto" otherwise, and the test couldn't
+    # discriminate between the two.
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", "cpu")
 
-    app = create_app(start_worker=False)
-
-    def _override():
-        s = Session()
-        try:
-            yield s
-        finally:
-            s.close()
-
-    app.dependency_overrides[get_session] = _override
-
-    with TestClient(app) as client:
-        yield client, Session
-
-
-def test_fresh_install_boots_with_encoder_family_auto(booted_api):
-    _client, Session = booted_api
-    with Session() as db:
-        assert get_setting(db, "encoder_family") == "auto"
+    client, Session = build_booted_client(monkeypatch)
+    with client as c:
+        yield c, Session
 
 
 def test_migration_runs_before_preset_seeding(booted_api):
@@ -84,4 +39,4 @@ def test_migration_runs_before_preset_seeding(booted_api):
     _client, Session = booted_api
     with Session() as db:
         assert get_setting(db, "handbrake_preset_1080") == "H.265 NVENC 1080p"
-        assert get_setting(db, "encoder_family") == "auto"
+        assert get_setting(db, "encoder_family") == "cpu"

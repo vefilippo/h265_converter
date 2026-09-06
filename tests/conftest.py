@@ -64,8 +64,6 @@ def _no_encoder_probe(monkeypatch):
     specific hardware seed the cache with encoders.store_capabilities() or
     monkeypatch encoders.probe themselves, which overrides this.
     """
-    try:
-        from transcoder import encoders
-    except ImportError:
-        return  # module does not exist yet in earlier tasks
+    from transcoder import encoders
+
     monkeypatch.setattr(encoders, "probe", lambda *a, **k: (set(), set()))
