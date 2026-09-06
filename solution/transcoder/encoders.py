@@ -359,7 +359,21 @@ def migrate_encoder_family(session) -> str | None:
         # backfill runs at startup before anything reads the family, so once a
         # row exists get_effective() never consults the env fallback again.
         # Without this, the documented ENCODER_FAMILY setting is dead config.
-        value = cfg.ENCODER_FAMILY or AUTO
+        #
+        # Validate it: this is the one path that turns a free-text .env string
+        # into the stored family, and the write is sticky. An unrecognised value
+        # would fall through resolve()'s custom branch onto the NVENC presets
+        # that seed_settings_from_env is about to write — failing every job on
+        # exactly the AMD/Intel hardware this feature exists to support.
+        value = (cfg.ENCODER_FAMILY or "").strip().lower()
+        if value and value not in FAMILIES and value not in (AUTO, CUSTOM):
+            log.warning(
+                "Ignoring unrecognised ENCODER_FAMILY=%r (expected one of %s); "
+                "using %s so hardware detection decides",
+                cfg.ENCODER_FAMILY, ", ".join([AUTO, *FAMILIES, CUSTOM]), AUTO,
+            )
+            value = ""
+        value = value or AUTO
     else:
         value = infer_family(stored_1080, get_setting(session, "handbrake_preset_4k") or "")
     set_setting(session, FAMILY_KEY, value)

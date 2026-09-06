@@ -27,9 +27,10 @@ describe("changelog verify gate", () => {
 
   it("every draft entry key resolves in every locale", () => {
     // The gate only validated released entries, so a branch could add a draft
-    // key with no string (or ship a flagship feature with no draft entry at
-    // all) and cut-release would only discover it after moving the keys into
-    // data.ts.
+    // key with no matching string and cut-release would discover it only after
+    // moving the keys into data.ts. (It cannot catch a missing draft entry —
+    // an empty entryKeys makes this vacuous, which is correct: master sits at
+    // empty after every release reset.)
     const missing: string[] = [];
     for (const locale of locales) {
       for (const k of draft.entryKeys) {

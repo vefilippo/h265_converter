@@ -33,6 +33,13 @@ def booted_api(monkeypatch):
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
+    # These tests assert the family lands on "auto", which is only true when the
+    # env is not steering it. tests/conftest.py pins the other required settings
+    # but not this one, so without this a developer machine with ENCODER_FAMILY
+    # exported would fail them for the wrong reason.
+    from transcoder.config import settings as cfg
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", "auto")
+
     monkeypatch.setattr(app_module, "init_db", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "migrate_legacy", lambda *a, **k: None)
     monkeypatch.setattr(app_module, "SessionLocal", Session)

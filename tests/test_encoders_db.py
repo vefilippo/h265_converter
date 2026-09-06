@@ -1,8 +1,10 @@
 import json
 
+import pytest
+
 from transcoder import encoders
 from transcoder.encoders import (
-    CAPABILITIES_KEY, CPU, AUTO, CUSTOM,
+    CAPABILITIES_KEY, CPU, AUTO, CUSTOM, FAMILIES,
     detect_and_store, get_or_detect_capabilities, load_capabilities,
     migrate_encoder_family, resolve_for_job, store_capabilities,
 )
@@ -197,6 +199,32 @@ def test_migrate_falls_back_to_auto_when_config_family_is_blank(session, monkeyp
     from transcoder.config import settings as cfg
     monkeypatch.setattr(cfg, "ENCODER_FAMILY", "")
     assert migrate_encoder_family(session) == AUTO
+
+
+@pytest.mark.parametrize("bogus", ["amd", "vce", "nvidia", "AUTO", "  ", "VCN"])
+def test_migrate_normalises_or_rejects_an_unrecognised_config_family(
+    session, monkeypatch, bogus
+):
+    """A typo in ENCODER_FAMILY must never become the stored family.
+
+    Storing it unvalidated is sticky and actively harmful: the row now exists so
+    the env is never consulted again, and resolve() treats any unknown family as
+    CUSTOM -- handing back the hardcoded NVENC presets that seed_settings_from_env
+    just wrote. On an AMD box that fails every single job, which is the exact
+    failure this feature exists to remove.
+    """
+    from transcoder.config import settings as cfg
+
+    monkeypatch.setattr(cfg, "ENCODER_FAMILY", bogus)
+    written = migrate_encoder_family(session)
+    session.commit()
+    # Case differences are a user typo we can safely honour; anything we cannot
+    # map to a real family must degrade to AUTO, which detects the truth.
+    expected = bogus.strip().lower()
+    if expected not in FAMILIES and expected not in (AUTO, CUSTOM):
+        expected = AUTO
+    assert written == expected
+    assert get_setting(session, "encoder_family") == expected
 
 
 def test_migrate_ignores_config_family_for_an_upgraded_install(session, monkeypatch):
