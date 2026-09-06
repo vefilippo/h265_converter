@@ -57,8 +57,20 @@ except ImportError as exc:
     _mb.showerror("Missing dependency", str(exc))
     sys.exit(1)
 
-BASE_URL = "http://localhost:8765"
 SOURCE_CODE_DIR = pathlib.Path(__file__).parent
+
+try:
+    # Safe to import: transcoder.config is pure pydantic-settings (reads .env),
+    # and transcoder/__init__.py has no side effects. It does NOT touch the
+    # database -- that is exactly the class of import-time bug this branch
+    # exists to fix (see docs/superpowers/plans/2026-09-06-fresh-install-startup.md).
+    from transcoder.config import settings as _settings
+    _API_PORT = _settings.API_PORT
+except Exception as exc:
+    log.warning("Could not import transcoder.config, defaulting API_PORT to 8765: %s", exc)
+    _API_PORT = int(os.environ.get("API_PORT", "8765"))
+
+BASE_URL = f"http://localhost:{_API_PORT}"
 _VENV_PY = SOURCE_CODE_DIR / ".venv" / "Scripts" / "pythonw.exe"
 if not _VENV_PY.exists():
     _VENV_PY = pathlib.Path(sys.executable)
@@ -205,21 +217,42 @@ def _notify(title: str, msg: str) -> None:
 # ── menu actions ──────────────────────────────────────────────────────────────
 
 def _find_server_pid() -> int | None:
-    """Return the PID of whatever process is listening on port 8765, or None."""
+    """Return the PID of whatever process is listening on the configured port, or None."""
     try:
         out = subprocess.check_output(
             ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL,
             creationflags=_NO_WINDOW,
         )
+        needle = f":{_API_PORT} "
         for line in out.splitlines():
-            if ":8765 " in line and "LISTENING" in line:
+            if needle in line and "LISTENING" in line:
                 return int(line.split()[-1])
     except Exception:
         pass
     return None
 
 
+def _wait_for_up(timeout: float = 20.0) -> bool:
+    """Poll _is_up() for up to `timeout` seconds. Runs on whatever thread calls
+    it -- callers that must not freeze the pystray event loop should invoke
+    this from a background thread (see _start_server)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _is_up():
+            return True
+        time.sleep(1)
+    return _is_up()
+
+
 def _open_ui(_icon, _item) -> None:
+    if not _is_up():
+        log.warning("Open UI clicked but server is not reachable at %s", BASE_URL)
+        _notify(
+            "H265 Transcoder",
+            "Server is not running -- opening the browser now would show the "
+            "wrong app. Check log/server_start.log.",
+        )
+        return
     webbrowser.open(BASE_URL)
 
 
@@ -251,6 +284,21 @@ def _start_server(_icon, _item) -> None:
     )
     threading.Thread(target=_pipe_stream, args=(_server_proc.stdout, logging.INFO), daemon=True).start()
     threading.Thread(target=_pipe_stream, args=(_server_proc.stderr, logging.WARNING), daemon=True).start()
+    # Wait for the server on a background thread so a slow or failed startup
+    # (e.g. the port-taken refusal, or an import-time crash) never blocks the
+    # pystray event loop -- _poll() follows the same "own thread" pattern.
+    threading.Thread(target=_await_startup, daemon=True).start()
+
+
+def _await_startup() -> None:
+    if _wait_for_up():
+        log.info("Server is up at %s", BASE_URL)
+        return
+    log.warning("Server did not come up within the startup timeout")
+    _notify(
+        "H265 Transcoder",
+        "Server failed to start. See log/server_start.log for details.",
+    )
 
 
 def _stop_server(_icon, _item) -> None:
