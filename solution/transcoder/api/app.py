@@ -26,7 +26,8 @@ def create_app(start_worker: bool = True) -> FastAPI:
         # the one we boot on.
         _dbp = db_path_from_url(settings.DATABASE_URL)
         import os as _os
-        apply_pending_restore(_os.path.dirname(_os.path.abspath(_dbp)) or ".", _dbp, ".env")
+        _restored = apply_pending_restore(
+            _os.path.dirname(_os.path.abspath(_dbp)) or ".", _dbp, ".env")
         init_db()
         backup_db()
         ensure_job_columns()
@@ -38,15 +39,29 @@ def create_app(start_worker: bool = True) -> FastAPI:
             reconcile_stale_jobs(session)
         finally:
             session.close()
-        if start_worker:
-            state.controller.start()
-
         # Seed settings from env on first startup
         import bcrypt as _bcrypt
         from transcoder.repo import seed_settings_from_env, get_setting, set_setting
         from transcoder.db import SessionLocal as _SL
         _cfg = settings  # settings is already imported from transcoder.config
         with _SL() as _db:
+            # MUST precede seed_settings_from_env: the seeder writes the NVENC
+            # preset defaults, after which a fresh install is indistinguishable
+            # from a deliberate NVIDIA setup.
+            from transcoder.encoders import migrate_encoder_family
+            if migrate_encoder_family(_db) is not None:
+                _db.commit()
+            if _restored:
+                # The backup snapshotted the SOURCE host's capability cache, and
+                # restore-onto-different-hardware is the whole point of the
+                # feature. A stale blob is worse than none: it makes 'auto' pick
+                # an encoder this box does not have, and it *disables* the CPU
+                # fallback for an explicit family that the old host really did
+                # have. Blank it (falsy raw == unknown) so the next job re-probes.
+                from transcoder.encoders import CAPABILITIES_KEY
+                set_setting(_db, CAPABILITIES_KEY, "")
+                _db.commit()
+                log.info("Restore applied: cleared cached encoder capabilities")
             seed_settings_from_env(_db, {
                 "sonarr_url": _cfg.SONARR_URL,
                 "sonarr_api_key": _cfg.SONARR_API_KEY,
@@ -66,6 +81,13 @@ def create_app(start_worker: bool = True) -> FastAPI:
                 _db.commit()
             _sched_cron = get_setting(_db, "scheduler_cron")
             _sched_startup = get_setting(_db, "scheduler_run_at_startup") == "true"
+
+        # Start the worker only AFTER the encoder-family migration above: the
+        # worker thread polls for queued jobs immediately (and reconcile_stale_jobs
+        # has just re-queued orphans), so starting it earlier races the migration
+        # and the first job would resolve presets from a missing encoder_family.
+        if start_worker:
+            state.controller.start()
 
         # Define the scheduled job (same logic as POST /run)
         async def _scheduled_run():
@@ -103,7 +125,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(meta.router)
 
     # Protected API routers.
-    from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs, backup
+    from transcoder.api.routers import library, scan, jobs, exclusions, stream, logs, backup, encoders
     protected = [Depends(require_auth)]
     app.include_router(library.router, dependencies=protected)
     app.include_router(scan.router, dependencies=protected)
@@ -113,6 +135,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     app.include_router(logs.router, dependencies=protected)
     app.include_router(settings_router.router, dependencies=protected)
     app.include_router(backup.router, dependencies=protected)
+    app.include_router(encoders.router, dependencies=protected)
 
     import os
     from fastapi import Request

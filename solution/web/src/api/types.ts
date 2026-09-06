@@ -47,6 +47,8 @@ export interface Settings {
   handbrake_cli: string;
   handbrake_preset_1080: string;
   handbrake_preset_4k: string;
+  encoder_family: string;
+  encoder_fallback_cpu: string;
   scheduler_next_run: string | null;
   webhook_username: string;
   webhook_password_set: boolean;
@@ -66,8 +68,30 @@ export interface SettingsUpdate {
   handbrake_cli?: string;
   handbrake_preset_1080?: string;
   handbrake_preset_4k?: string;
+  encoder_family?: string;
+  encoder_fallback_cpu?: string;
   current_password?: string;
   new_password?: string;
   webhook_username?: string;
   webhook_password?: string;
+}
+
+export interface EncoderFamily {
+  id: string;
+  label: string;
+  preset_1080: string;
+  preset_4k: string;
+  hardware: boolean;
+  available: boolean;
+}
+
+export interface EncodersResponse {
+  available: string[];
+  detected_at: string | null;
+  families: EncoderFamily[];
+}
+
+export interface DetectResponse extends EncodersResponse {
+  ok: boolean;
+  error?: string;
 }

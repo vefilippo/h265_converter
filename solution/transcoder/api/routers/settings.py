@@ -42,6 +42,8 @@ def get_settings(db: Session = Depends(get_db)):
         handbrake_cli=get_effective(db, "handbrake_cli", cfg.HANDBRAKE_CLI),
         handbrake_preset_1080=get_effective(db, "handbrake_preset_1080", cfg.PRESET_1080),
         handbrake_preset_4k=get_effective(db, "handbrake_preset_4k", cfg.PRESET_4K),
+        encoder_family=get_effective(db, "encoder_family", cfg.ENCODER_FAMILY),
+        encoder_fallback_cpu=get_effective(db, "encoder_fallback_cpu", "true"),
         scheduler_next_run=state.scheduler.next_run(),
         webhook_username=get_effective(db, "webhook_username", ""),
         webhook_password_set=bool(get_setting(db, "webhook_password_hash")),
@@ -71,6 +73,7 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     simple_fields = [
         "sonarr_url", "radarr_url", "sftp_host", "sftp_port", "sftp_username",
         "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
+        "encoder_family", "encoder_fallback_cpu",
         "scheduler_run_at_startup", "webhook_username",
     ]
     for field in simple_fields:

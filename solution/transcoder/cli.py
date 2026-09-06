@@ -42,6 +42,15 @@ def main() -> None:
     args = build_parser().parse_args()
 
     with SessionLocal() as session:
+        # MUST run before anything reads/writes preset settings, mirroring
+        # api/app.py's startup ordering: backfills encoder_family so a
+        # pre-existing install's hand-tuned handbrake_preset_1080/_4k is
+        # inferred as its matching family instead of resolve_for_job silently
+        # defaulting an un-migrated install to 'auto'.
+        from transcoder.encoders import migrate_encoder_family
+        if migrate_encoder_family(session) is not None:
+            session.commit()
+
         migrate_legacy(session)
 
         if args.command == "queue":

@@ -156,6 +156,8 @@ class SettingsOut(BaseModel):
     handbrake_cli: str = ""
     handbrake_preset_1080: str = "H.265 NVENC 1080p"
     handbrake_preset_4k: str = "H.265 NVENC 2160p 4K"
+    encoder_family: str = "auto"
+    encoder_fallback_cpu: str = "true"
     scheduler_next_run: str | None = None
     webhook_username: str = ""
     webhook_password_set: bool = False
@@ -175,6 +177,8 @@ class SettingsUpdate(BaseModel):
     handbrake_cli: str | None = None
     handbrake_preset_1080: str | None = None
     handbrake_preset_4k: str | None = None
+    encoder_family: str | None = None
+    encoder_fallback_cpu: str | None = None
     current_password: str | None = None
     new_password: str | None = None
     webhook_username: str | None = None

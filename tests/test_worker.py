@@ -90,7 +90,9 @@ def test_worker_success_smaller(session, monkeypatch):
     assert job.progress == 100
     assert len(calls["upload"]) == 1
     assert len(client.imported) == 1
-    assert job.preset == "H.265 NVENC 1080p"
+    # No encoder settings seeded: 'auto' with unknown capabilities resolves to
+    # CPU x265, the only family guaranteed present in any HandBrake build.
+    assert job.preset == "H.265 MKV 1080p30"
 
 
 def test_worker_larger_excludes(session, monkeypatch):

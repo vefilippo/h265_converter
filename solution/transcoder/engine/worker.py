@@ -4,6 +4,7 @@ import os
 import re
 
 from transcoder.config import settings
+from transcoder.encoders import AUTO, CPU, FAMILIES, resolve_for_job
 from transcoder.repo import get_effective
 
 log = logging.getLogger("transcoder")
@@ -82,9 +83,10 @@ def process_one_job(
         job.phase = "downloading"
         job.started_at = utcnow()
         job.progress = 0
-        preset_4k = get_effective(session, "handbrake_preset_4k", settings.PRESET_4K)
-        preset_1080 = get_effective(session, "handbrake_preset_1080", settings.PRESET_1080)
-        job.preset = preset_4k if item.resolution > 1080 else preset_1080
+        resolution = resolve_for_job(session)
+        job.preset = (
+            resolution.preset_4k if item.resolution > 1080 else resolution.preset_1080
+        )
         session.commit()
         job_log(session, job, f"Downloading {item.title}")
 
@@ -110,6 +112,29 @@ def process_one_job(
         job.progress = 0
         session.commit()
         job_log(session, job, f"Transcoding {item.title} (preset {job.preset})")
+        if resolution.substituted:
+            requested = FAMILIES[resolution.requested]["label"]
+            job_log(
+                session, job,
+                f"{requested} is not available on this host; falling back to "
+                "CPU x265 — this will be substantially slower",
+            )
+        elif resolution.detection_unknown:
+            if resolution.family == CPU and resolution.requested == AUTO:
+                # 'auto' with unknown capabilities silently lands on CPU x265
+                # (see resolve()) -- that's the one detection_unknown case
+                # that is itself a slow substitution, so it gets the same loud
+                # wording as an explicit substituted fallback.
+                job_log(
+                    session, job,
+                    "Encoder detection unavailable; no hardware encoder could "
+                    "be confirmed, using CPU x265 — substantially slower",
+                )
+            else:
+                job_log(
+                    session, job,
+                    "Encoder detection unavailable; running the configured preset as set",
+                )
         output_file, exclude_flag = convert(
             tmp_file, out_name, job.preset,
             progress_cb=_progress_writer(session, job),

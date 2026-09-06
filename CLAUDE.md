@@ -41,6 +41,8 @@ Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
 `POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`, `POST /api/jobs/delete` (bulk-delete terminal-state jobs by id list), `GET /api/jobs/{id}/logs`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE), `GET /api/logs`,
 `POST /api/library/{id}/enqueue`,
+`GET /api/encoders` (family catalog + cached availability), `POST /api/encoders/detect`
+(probes HandBrakeCLI and caches what it finds),
 `POST /api/backup` (JSON `{passphrase}` → streams an encrypted `backup.zip`),
 `POST /api/restore` (multipart `file` + `passphrase`; stages the backup, then the
 app relaunches itself and a pre-DB-init bootstrap applies it),
@@ -60,7 +62,7 @@ cd solution/web && npm install && npm run dev     # UI on :5173, proxies /api ->
 cd solution/web && npm run build                  # -> web/dist
 cd solution && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder, security, a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use, and a Backup & Restore section to download an encrypted state backup and restore one onto a new instance). Frontend tests: `cd solution/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder — an encoder-family selector with hardware detection (AMD VCN / NVIDIA NVENC / Intel QSV / CPU x265 / Custom) plus an optional CPU fallback, security, a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use, and a Backup & Restore section to download an encrypted state backup and restore one onto a new instance). Frontend tests: `cd solution/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 
@@ -154,6 +156,8 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `engine/discovery.py` — scans Sonarr/Radarr, upserts `media_item`s, advances the watermark
 - `engine/queue.py` — turns eligible items into `queued` jobs (deduped)
 - `engine/worker.py` — serial worker: download → transcode → replace-or-exclude → cleanup
+- `encoders.py` — encoder family catalog, HandBrake capability probe (parses the
+  `--version` banner), and per-job preset resolution with optional CPU fallback
 - `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status), `auth.py` (single-password session login, `require_auth`). `worker_controller.py` runs the continuous background transcode worker (cancellable).
 - `web/` — React SPA (Cycle 3, Vite + Tailwind + shadcn-style primitives in `src/components/ui/`): `api/` client+types, `hooks/` (TanStack Query + SSE), `pages/` (Dashboard/Library/Jobs/Exclusions/Login), `auth/` (AuthGate). Built to `web/dist`, served by FastAPI. Data tables (Library/Jobs/Exclusions) use a shared `components/ui/data-table.tsx` (TanStack Table) that renders through the Tailwind `Table` primitives — columns are click-to-sort with `aria-sort`; Jobs defaults to the "When" column (`finished_at ?? started_at ?? created_at`) descending.
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
@@ -188,7 +192,9 @@ pure, unit-tested helpers; `host_setup.py` is the live GUI/subprocess/registry I
 ## External Dependencies
 
 - **HandBrake CLI**: path configured via `HANDBRAKE_CLI` (e.g. `C:\path\to\HandBrakeCLI.exe`)
-  - Presets: `"H.265 NVENC 1080p"` and `"H.265 NVENC 2160p 4K"`
+  - Presets are chosen by encoder family: AMD `H.265 VCN 1080p` / `H.265 VCN 2160p 4K`,
+    NVIDIA `H.265 NVENC 1080p` / `H.265 NVENC 2160p 4K`, Intel `H.265 QSV 1080p` /
+    `H.265 QSV 2160p 4K`, CPU `H.265 MKV 1080p30` / `H.265 MKV 2160p60 4K`
 - **Sonarr**: `http://<sonarr-host>:<port>` (e.g. `http://localhost:8989`)
 - **Radarr**: `http://<radarr-host>:<port>` (e.g. `http://localhost:7878`)
 - **SFTP**: `<sftp-host>:22`

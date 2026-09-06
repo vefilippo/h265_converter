@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { vi, test, expect } from "vitest";
 import { Button } from "./button";
 import { Badge, jobStateLabel } from "./badge";
 import { Progress } from "./progress";
+import { Select } from "./select";
 
 test("jobStateLabel shows the phase for a running job", () => {
   expect(jobStateLabel({ state: "running", phase: "transcoding" } as any)).toBe("Transcoding");
@@ -14,4 +16,18 @@ test("primitives render", () => {
   expect(screen.getByText("Go")).toBeInTheDocument();
   expect(screen.getByText("running")).toBeInTheDocument();
   expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+});
+
+test("Select renders options and reports changes", () => {
+  const onChange = vi.fn();
+  render(
+    <Select aria-label="Encoder" value="vcn" onChange={onChange}>
+      <option value="vcn">AMD VCN</option>
+      <option value="cpu">CPU (x265)</option>
+    </Select>,
+  );
+  const el = screen.getByLabelText("Encoder") as HTMLSelectElement;
+  expect(el.value).toBe("vcn");
+  fireEvent.change(el, { target: { value: "cpu" } });
+  expect(onChange).toHaveBeenCalled();
 });
