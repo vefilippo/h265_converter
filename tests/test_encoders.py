@@ -33,18 +33,6 @@ SILENT_ON_NVENC_BANNER = """[10:00:00] vcn: is available
 """
 
 
-def test_parse_amd_banner_finds_vcn_and_cpu():
-    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
-
-
-def test_parse_treats_nvenc_dll_failure_as_unavailable():
-    assert "nvenc" not in parse_capabilities(AMD_BANNER)
-
-
-def test_parse_does_not_confuse_not_available_with_available():
-    assert "qsv" not in parse_capabilities(AMD_BANNER)
-
-
 def test_parse_nvidia_banner():
     assert parse_capabilities(NVIDIA_BANNER) == {"nvenc", CPU}
 
@@ -69,14 +57,6 @@ def test_parse_returns_empty_set_for_unparseable_banner():
     # read as "cpu only" — that would make resolve() substitute CPU under an
     # explicitly-chosen hardware family.
     assert parse_capabilities("garbage output\n") == set()
-
-
-def test_parse_recognised_banner_still_includes_cpu():
-    assert CPU in parse_capabilities(NVIDIA_BANNER)
-
-
-def test_parse_amd_banner_returns_exactly_vcn_and_cpu():
-    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
 
 
 def test_auto_prefers_vcn_over_cpu():
@@ -195,18 +175,9 @@ def test_unrecognised_explicit_family_behaves_like_custom():
 # ── "Unmentioned is unknown", at HandBrake's own reporting granularity ────────
 
 
-def test_parse_unavailable_reads_the_explicit_negatives_from_the_amd_banner():
-    # qsv says so in words; nvenc says so by failing to load its runtime DLL.
-    assert parse_unavailable(AMD_BANNER) == {"qsv", "nvenc"}
-
-
 def test_parse_unavailable_is_empty_for_unrecognisable_output():
     assert parse_unavailable("") == set()
     assert parse_unavailable("garbage output") == set()
-
-
-def test_parse_unavailable_ignores_a_positively_reported_family():
-    assert "vcn" not in parse_unavailable(AMD_BANNER)
 
 
 def test_amd_banner_splits_into_available_and_unavailable():
