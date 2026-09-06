@@ -62,7 +62,7 @@ cd solution/web && npm install && npm run dev     # UI on :5173, proxies /api ->
 cd solution/web && npm run build                  # -> web/dist
 cd solution && python -m transcoder.api           # open http://<host>:8765, log in
 ```
-Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder — an encoder-family selector with hardware detection (AMD VCN / NVIDIA NVENC / Intel QSV / CPU x265 / Custom) plus an optional CPU fallback, security, a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use, and a Backup & Restore section to download an encrypted state backup and restore one onto a new instance). Frontend tests: `cd solution/web && npm test`.
+Screens: Dashboard (live status/progress via SSE, plus a "space saved" stat — absolute bytes + % reclaimed across completed jobs, served on `GET /api/status` as `savings`), Library (filter/enqueue/exclude/scan), Jobs (cancel/retry), Exclusions, Logs (live activity), Settings (connections, scheduler, encoder — an encoder-family selector with hardware detection (Auto / AMD VCN / NVIDIA NVENC / Intel QSV / CPU x265 / Custom) plus an optional CPU fallback, security, a Webhooks section that shows the two `/api/webhook/{source}` URLs and sets the Basic-auth credentials Sonarr/Radarr use, and a Backup & Restore section to download an encrypted state backup and restore one onto a new instance). Frontend tests: `cd solution/web && npm test`.
 
 Activity logging: the `transcoder` logger feeds an in-memory ring buffer (last 500 records); `GET /api/logs?after=<seq>` returns new lines incrementally and the Logs page polls it (~2s).
 
@@ -85,6 +85,48 @@ declare a fix or feature done until tests are green.
 For bug fixes, first add a failing test that reproduces the defect, then fix it — this
 catches the *real* root cause rather than a surface symptom, and guards against the
 regression coming back.
+
+## Delegating implementation (OpusForge)
+
+Mechanical implementation work is delegated to the local OpusForge worker
+(`mcp__opusforge__local_worker`) rather than to a hosted subagent. It runs a
+Claude Code child against a local Ollama model, inside this repository, with the
+parent's credentials withheld.
+
+**Delegate when all three hold:** the change is mechanical (carrying out a
+decision already made, not making one), well-specified (success is checkable
+without judgment — a failing test, a named function, an exact string), and
+narrow (one or two files).
+
+**Keep on a hosted model:** design and architecture, multi-file coordination,
+anything where the right answer depends on taste, and *every* review role. A
+local worker never reviews its own work or anyone else's.
+
+**Dispatch:** pass the task brief by path (`brief_file`) so the brief stays the
+single source of requirements, send the narrative to `report_file` so the
+worker's prose does not fill the orchestrator's context, and set
+`working_directory` to the repo root.
+
+**Committing:** `allow_commit` stays false — the orchestrator commits, after
+review, so nothing the local model wrote enters history unreviewed. Concurrent
+workers also race on `.git/index.lock`, so a worker that commits can break a
+parallel wave.
+
+**Reading the result:** review `files_changed` and `git.stat` — OpusForge
+produces these by running `git diff` after the child exits, so they are ground
+truth from disk rather than the model's account of itself. Note the caveat:
+that diff covers the WHOLE working tree, so when workers run concurrently it
+lists other agents' files too and is not attributable to the reporting worker.
+Confirm a worker's change is actually on disk before believing its report. A
+`NO_WORK` status means the model made zero tool calls and nothing happened;
+make the task more mechanical or escalate to a hosted agent, but do not re-send
+the same wording.
+
+**Concurrency:** workers share one working tree. Commit each task the moment it
+lands and its suite is green — never batch a wave — and forbid every
+state-changing git command by name in the brief (`checkout`, `restore`,
+`stash`, `reset`, `clean`, not just `commit`). A single stray restore silently
+destroys every other worker's uncommitted work.
 
 ## Git Workflow
 
@@ -180,8 +222,7 @@ tests (`tests/`, `deploy/h265-transcoder/tests/`) and docs live outside `solutio
 from the root (not `cd solution`). The app reads a cwd-relative `transcoder.db`, so
 it must be launched with cwd = `solution/` (the scripts and `tray.pyw` already do this).
 
-**Deploy (Windows installer):** the app runs natively (HandBrake NVENC on the GPU,
-in the user's session), so it ships as a self-contained `*-setup.exe`, not a
+**Deploy (Windows installer):** the app runs natively (HandBrake hardware encoding on the GPU — AMD VCN, NVIDIA NVENC or Intel QSV — in the user's session), so it ships as a self-contained `*-setup.exe`, not a
 container. `build-host-setup.bat` (root) → `deploy/h265-transcoder/build.bat` stages
 the payload from `git ls-files -- solution` (whitelist — secrets are gitignored so
 they can't leak), builds the web UI, generates an icon, and freezes `host_setup.py`
