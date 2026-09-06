@@ -269,6 +269,49 @@ CAPABILITIES_KEY = "encoder_capabilities"
 FAMILY_KEY = "encoder_family"
 FALLBACK_KEY = "encoder_fallback_cpu"
 
+# Key inside the capabilities blob naming the HandBrake binary it was probed
+# against. Lets a caller ask "is this cache about the binary now configured?"
+# instead of the weaker "did the setting change?" -- see load_probed_cli().
+CLI_KEY = "cli"
+
+
+def _load_blob(session) -> dict | None:
+    """Parse the cached capabilities blob, or None when absent/corrupt."""
+    from transcoder.repo import get_setting
+
+    raw = get_setting(session, CAPABILITIES_KEY)
+    if not raw:
+        return None
+    try:
+        blob = json.loads(raw)
+    except ValueError:
+        log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
+        return None
+    if not isinstance(blob, dict):
+        log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
+        return None
+    return blob
+
+
+def load_probed_cli(session) -> str | None:
+    """The HandBrake path the cached capabilities were probed against.
+
+    Deliberately a separate accessor rather than a fourth element on
+    load_capabilities(): only cache-invalidation asks this question, while every
+    other caller wants the three-tuple, and widening it would churn each of them
+    for a value they immediately discard.
+
+    ``None`` means UNKNOWN PROVENANCE -- nothing cached, a corrupt blob, or a
+    blob written before this key existed. Unknown provenance is not "probed
+    against a different binary": callers must not invalidate on it, or the first
+    save after an upgrade would discard a perfectly good detection.
+    """
+    blob = _load_blob(session)
+    if blob is None:
+        return None
+    cli = blob.get(CLI_KEY)
+    return cli if isinstance(cli, str) and cli else None
+
 
 def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
     """Read the cached probe result as ``(available, unavailable, detected_at)``.
@@ -284,10 +327,8 @@ def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
     the whole blob; a malformed ``unavailable`` degrades to "no explicit
     negatives" rather than discarding an otherwise valid positive set.
     """
-    from transcoder.repo import get_setting
-
-    raw = get_setting(session, CAPABILITIES_KEY)
-    if not raw:
+    blob = _load_blob(session)
+    if blob is None:
         return set(), set(), None
 
     def _str_set(value) -> set[str] | None:
@@ -302,7 +343,6 @@ def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
         return set(value)
 
     try:
-        blob = json.loads(raw)
         available = _str_set(blob["available"])
         unavailable = _str_set(blob.get("unavailable"))
         if available is None:
@@ -313,6 +353,11 @@ def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
             log.warning("Ignoring corrupt 'unavailable' in %s", CAPABILITIES_KEY)
             unavailable = set()
         detected_at = blob.get("detected_at")
+        if not isinstance(detected_at, str):
+            # EncodersOut.detected_at is `str | None`; a hand-edited numeric
+            # value would reach the response model and 500 GET /api/encoders.
+            # An unreadable timestamp is cosmetic, so drop it and keep the sets.
+            detected_at = None
         if not available:
             # empty-set-means-unknown is total: no timestamp without a result.
             return set(), set(), None
@@ -326,8 +371,16 @@ def store_capabilities(
     session,
     available: set[str],
     unavailable: set[str] | frozenset[str] = frozenset(),
+    *,
+    cli: str = "",
 ) -> str:
-    """Cache a probe result; returns the ISO-8601 detection timestamp."""
+    """Cache a probe result; returns the ISO-8601 detection timestamp.
+
+    ``cli`` is the HandBrake binary the result was probed against, recorded so
+    cache invalidation can compare provenance instead of guessing from the
+    stored setting. Keyword-only and optional so existing positional callers
+    (and test fixtures that seed a cache) are unaffected.
+    """
     # transcoder.repo pulls in transcoder.db, which constructs a SQLAlchemy
     # engine at import time. Importing it at module scope would make merely
     # importing this catalog open a database connection, so the repo imports
@@ -339,6 +392,7 @@ def store_capabilities(
         "available": sorted(available),
         "unavailable": sorted(unavailable),
         "detected_at": detected_at,
+        CLI_KEY: cli,
     }))
     return detected_at
 
@@ -351,7 +405,9 @@ def detect_and_store(
     available, unavailable = probe(handbrake_cli)
     if not available:
         return set(), set(), None
-    return available, unavailable, store_capabilities(session, available, unavailable)
+    return available, unavailable, store_capabilities(
+        session, available, unavailable, cli=handbrake_cli
+    )
 
 
 # Process-local memo of CLI paths whose probe came back unknown. The DB must

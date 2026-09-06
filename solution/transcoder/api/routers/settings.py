@@ -112,15 +112,33 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         schedule_changed = True
 
     new_cli = getattr(body, "handbrake_cli", None)
-    if new_cli is not None and new_cli not in ("", _REDACTED) and new_cli != previous_cli:
-        # The cached families were probed against the OLD binary, so 'auto' could
-        # resolve to a family the new one lacks and an explicit family would miss
-        # its CPU fallback. Blank the blob (a falsy raw value reads as unknown to
-        # load_capabilities) rather than deleting the row, mirroring the
-        # post-restore clear, and drop the process-local memo too.
-        set_setting(db, _enc.CAPABILITIES_KEY, "")
-        _enc.reset_probe_cache()
-        updated.append("encoder_capabilities_cleared")
+    if new_cli is not None and new_cli not in ("", _REDACTED):
+        if new_cli != previous_cli:
+            # The process-local memo of "this binary probes to unknown" is keyed
+            # on the path, so a changed path can't return a stale answer anyway;
+            # clearing it is free and keeps restart-free retry after a fix.
+            _enc.reset_probe_cache()
+
+        # Invalidate on PROVENANCE, not on "the setting changed". The only
+        # supported UI flow is Detect-then-Save: Detect probes the typed path and
+        # commits the blob, then Save arrives with that same path. Comparing
+        # against the old DB row would blank the detection the user just ran --
+        # and on a fresh install, where no handbrake_cli row exists at all, it
+        # blanked the setup wizard's detection on every first save.
+        #
+        # A blob with no recorded path (written before CLI_KEY existed) reports
+        # None: unknown provenance, which is NOT proof of a mismatch, so it is
+        # left alone. The next Detect stamps it, and the cost of keeping a
+        # possibly-stale cache is one Detect click, versus destroying a good one.
+        probed_cli = _enc.load_probed_cli(db)
+        if probed_cli is not None and probed_cli != new_cli:
+            # Those families describe a different binary: 'auto' could resolve to
+            # a family this one lacks, and an explicit family would miss its CPU
+            # fallback. Blank the blob (a falsy raw value reads as unknown to
+            # load_capabilities) rather than deleting the row, mirroring the
+            # post-restore clear.
+            set_setting(db, _enc.CAPABILITIES_KEY, "")
+            updated.append("encoder_capabilities_cleared")
 
     db.commit()
 
