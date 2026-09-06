@@ -17,6 +17,8 @@ Installed layout (per-user, %LOCALAPPDATA%):
 from __future__ import annotations
 
 import pathlib
+import re
+import socket
 
 APP_NAME = "H265Transcoder"          # task name + install-folder name + registry key
 APP_DISPLAY = "H.265 Transcoder"     # Add/Remove Programs display name
@@ -160,3 +162,71 @@ def payload_dest(rel: str, dest_root: str) -> str:
     preserving its relative tree."""
     rel_posix = rel.replace("\\", "/")
     return str(pathlib.Path(dest_root).joinpath(*rel_posix.split("/")))
+
+
+def port_is_free(port: int, host: str = "127.0.0.1") -> bool:
+    """True if nothing answers on (host, port): a short-timeout loopback probe.
+
+    DELIBERATE DUPLICATION: transcoder/api/__main__.py has an equivalent probe.
+    We don't import it here because deploy/ is a separate toolchain that runs
+    BEFORE the app's own venv (and thus the transcoder package) exists — the
+    installer wizard needs this before `solution/` has been staged or its
+    dependencies installed. Keep any behavioural fix in sync with that copy.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        result = sock.connect_ex((host, port))
+    return result != 0
+
+
+def first_free_port(start: int = 8765, limit: int = 20) -> int | None:
+    """The first free port in range(start, start + limit), or None if all taken."""
+    for port in range(start, start + limit):
+        if port_is_free(port):
+            return port
+    return None
+
+
+_ENV_KEY_RE = re.compile(r"^[ \t]*(#?)[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=")
+
+
+def upsert_env_var(text: str, key: str, value: str) -> str:
+    """Set `key=value` in .env-style `text`, replacing an existing (uncommented)
+    line in place, or appending a new line, without disturbing anything else.
+
+    Pure text transform: no file I/O. Used to persist API_PORT (and similar)
+    into an installed app's .env, which on re-install already holds live
+    Sonarr/Radarr API keys and an SFTP password — so this must never touch
+    unrelated lines, comments, or blank lines.
+
+    Line-ending decision: CRLF vs LF is detected from the input and preserved
+    for both a rewritten line and a freshly appended one (this is a Windows
+    installer; the .env it edits will normally be CRLF, but we don't force
+    that on LF content). Empty/absent content defaults to "\\n".
+
+    Duplicate-key decision: if the key appears uncommented more than once, the
+    FIRST occurrence is replaced in place and later duplicates are dropped —
+    an .env with the same key twice is already ambiguous, and this avoids
+    leaving two live, conflicting lines behind.
+    """
+    newline = "\r\n" if "\r\n" in text else "\n"
+    # splitlines(keepends=False) strips both \n and \r\n cleanly, and also
+    # correctly handles content with no trailing newline at all.
+    lines = text.splitlines()
+
+    replaced = False
+    out = []
+    for line in lines:
+        m = _ENV_KEY_RE.match(line)
+        if m and not m.group(1) and m.group(2) == key:
+            if not replaced:
+                out.append(f"{key}={value}")
+                replaced = True
+            # else: drop this duplicate line entirely
+        else:
+            out.append(line)
+
+    if not replaced:
+        out.append(f"{key}={value}")
+
+    return newline.join(out) + newline
