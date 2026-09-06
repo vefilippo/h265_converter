@@ -78,7 +78,7 @@ def dev_checkout_payload() -> Path | None:
 
 
 # --- install -------------------------------------------------------------------
-def install(install_dir: str | None = None, sink=None) -> str:
+def install(install_dir: str | None = None, port: int | None = None, sink=None) -> str:
     install_dir = install_dir or lib.default_install_dir()
     inst = Path(install_dir)
     payload_src = bundled_payload()
@@ -104,6 +104,9 @@ def install(install_dir: str | None = None, sink=None) -> str:
 
     payload = inst / lib.PAYLOAD_DIRNAME
 
+    if port is not None:
+        _write_env_port(payload, port, sink)
+
     _emit("[install] creating venv + installing deps …", sink)
     venv_py = Path(lib.venv_python(str(inst)))
     if not venv_py.exists():
@@ -125,6 +128,25 @@ def install(install_dir: str | None = None, sink=None) -> str:
     _emit("[install] done. The tray + server start at next logon "
           "(start now: schtasks /run /tn H265Transcoder).", sink)
     return str(inst)
+
+
+def _write_env_port(payload: Path, port: int, sink=None) -> None:
+    """Create-or-update <payload>/.env so it holds API_PORT=<port>.
+
+    On a re-install this file already holds the user's Sonarr/Radarr API keys
+    and SFTP password — merge via lib.upsert_env_var rather than overwriting,
+    and read/write with newline="" so existing CRLF line endings pass through
+    untouched (upsert_env_var is responsible for preserving them).
+    """
+    env_path = payload / ".env"
+    existing = ""
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8", newline="") as fh:
+            existing = fh.read()
+    updated = lib.upsert_env_var(existing, "API_PORT", str(port))
+    with open(env_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(updated)
+    _emit(f"[install] web UI port set to {port} in {env_path}", sink)
 
 
 def _create_shortcut(install_dir: str, sink=None) -> None:
@@ -229,11 +251,13 @@ def run_gui(do_uninstall: bool) -> None:
         if do_uninstall else
         "Installs H.265 Transcoder for the current user.\n\n"
         "Requires (not bundled): Python 3.10+, HandBrake CLI, and an NVIDIA GPU "
-        "for NVENC. The service starts automatically at logon."
+        "for NVENC. The service starts automatically at logon, on the web UI "
+        "port you choose below."
     )
     ttk.Label(root, text=intro, wraplength=600, justify="left").pack(padx=16, pady=12, anchor="w")
 
     dir_var = tk.StringVar(value=lib.default_install_dir())
+    port_var = tk.StringVar()
     if not do_uninstall:
         row = ttk.Frame(root); row.pack(fill="x", padx=16)
         ttk.Label(row, text="Install location:").pack(side="left")
@@ -241,6 +265,58 @@ def run_gui(do_uninstall: bool) -> None:
         ttk.Button(row, text="Browse…",
                    command=lambda: dir_var.set(filedialog.askdirectory() or dir_var.get())
                    ).pack(side="left")
+
+        DEFAULT_PORT = 8765
+
+        port_row = ttk.Frame(root); port_row.pack(fill="x", padx=16, pady=(8, 0))
+        ttk.Label(port_row, text="Web UI port:").pack(side="left")
+        ttk.Entry(port_row, textvariable=port_var, width=8).pack(side="left", padx=8)
+        port_status_var = tk.StringVar()
+        port_status_label = ttk.Label(port_row, textvariable=port_status_var)
+        port_status_label.pack(side="left")
+
+        port_hint_var = tk.StringVar()
+        ttk.Label(root, textvariable=port_hint_var, wraplength=600, justify="left",
+                  foreground="#88aaff").pack(fill="x", padx=16, pady=(2, 0), anchor="w")
+
+        def _check_port(*_args) -> None:
+            raw = port_var.get().strip()
+            try:
+                p = int(raw)
+            except ValueError:
+                port_status_var.set("  ✗ invalid port")
+                port_status_label.config(foreground="red")
+                return
+            if not (1024 <= p <= 65535):
+                port_status_var.set("  ✗ invalid port (1024-65535)")
+                port_status_label.config(foreground="red")
+                return
+            try:
+                free = lib.port_is_free(p)
+            except Exception:
+                # Can't probe it — don't block the user over it, just stay quiet.
+                port_status_var.set("")
+                return
+            if free:
+                port_status_var.set("  ● free")
+                port_status_label.config(foreground="green")
+            else:
+                port_status_var.set("  ● in use")
+                port_status_label.config(foreground="orange")
+
+        port_var.trace_add("write", _check_port)
+
+        try:
+            initial_port = lib.first_free_port()
+        except Exception:
+            initial_port = None
+        if initial_port is None:
+            initial_port = DEFAULT_PORT
+        if initial_port != DEFAULT_PORT:
+            port_hint_var.set(
+                f"ℹ {DEFAULT_PORT} was in use, so {initial_port} was selected for you."
+            )
+        port_var.set(str(initial_port))  # triggers _check_port via the trace
 
     logbox = tk.Text(root, height=14, wrap="word")
     logbox.pack(fill="both", expand=True, padx=16, pady=12)
@@ -268,7 +344,16 @@ def run_gui(do_uninstall: bool) -> None:
             if do_uninstall:
                 uninstall(dir_var.get(), sink=q.put)
             else:
-                install(dir_var.get(), sink=q.put)
+                raw_port = port_var.get().strip()
+                try:
+                    port = int(raw_port)
+                    if not (1024 <= port <= 65535):
+                        raise ValueError
+                except ValueError:
+                    port = None
+                    q.put(f"[install] port {raw_port!r} is invalid — "
+                          "leaving the web UI port at its default")
+                install(dir_var.get(), port=port, sink=q.put)
             q.put("\n✓ Finished. You may close this window.")
         except Exception as exc:  # noqa: BLE001
             ok = False
