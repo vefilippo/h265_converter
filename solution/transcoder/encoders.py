@@ -357,18 +357,37 @@ def detect_and_store(
     return available, unavailable, store_capabilities(session, available, unavailable)
 
 
+# Process-local memo of CLI paths whose probe came back unknown. The DB must
+# never cache "unknown" (a broken HandBrake that gets fixed has to be picked up
+# without a manual reset), but without this a permanently unreadable banner
+# costs one subprocess per job. Dying with the process keeps restart-to-retry.
+_unknown_probes: set[str] = set()
+
+
+def reset_probe_cache() -> None:
+    """Forget memoised unknown probes. Call when the HandBrake path changes."""
+    _unknown_probes.clear()
+
+
 def get_or_detect_capabilities(
     session, handbrake_cli: str
 ) -> tuple[set[str], set[str], str | None]:
     """Cached capabilities, probing once lazily if nothing is cached yet.
 
     This is what lets 'auto' work on a fresh install without adding a subprocess
-    call to every server start.
+    call to every server start. An unknown result is memoised in memory only,
+    keyed on the CLI path: the DB still caches nothing, so a restart (or
+    reset_probe_cache()) retries a HandBrake that has since been fixed.
     """
     available, unavailable, detected_at = load_capabilities(session)
     if available:
         return available, unavailable, detected_at
-    return detect_and_store(session, handbrake_cli)
+    if handbrake_cli in _unknown_probes:
+        return set(), set(), None
+    result = detect_and_store(session, handbrake_cli)
+    if not result[0]:
+        _unknown_probes.add(handbrake_cli)
+    return result
 
 
 def resolve_for_job(session) -> Resolution:
