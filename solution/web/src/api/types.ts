@@ -47,7 +47,7 @@ export interface Settings {
   handbrake_cli: string;
   handbrake_preset_1080: string;
   handbrake_preset_4k: string;
-  encoder_family: string;
+  encoder_family: EncoderFamilyId;
   encoder_fallback_cpu: string;
   scheduler_next_run: string | null;
   webhook_username: string;
@@ -68,7 +68,7 @@ export interface SettingsUpdate {
   handbrake_cli?: string;
   handbrake_preset_1080?: string;
   handbrake_preset_4k?: string;
-  encoder_family?: string;
+  encoder_family?: EncoderFamilyId;
   encoder_fallback_cpu?: string;
   current_password?: string;
   new_password?: string;
@@ -76,8 +76,15 @@ export interface SettingsUpdate {
   webhook_password?: string;
 }
 
+export type EncoderFamilyId = "auto" | "vcn" | "nvenc" | "qsv" | "cpu" | "custom";
+
+const FAMILY_IDS: readonly EncoderFamilyId[] = ["auto", "vcn", "nvenc", "qsv", "cpu", "custom"];
+export function asFamilyId(v: string): EncoderFamilyId {
+  return (FAMILY_IDS as readonly string[]).includes(v) ? (v as EncoderFamilyId) : "auto";
+}
+
 export interface EncoderFamily {
-  id: string;
+  id: EncoderFamilyId;
   label: string;
   preset_1080: string;
   preset_4k: string;

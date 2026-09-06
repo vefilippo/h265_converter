@@ -4,7 +4,7 @@ import { updateSettings, detectEncoders } from "../api/client";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
-import type { EncoderFamily } from "../api/types";
+import type { EncoderFamilyId } from "../api/types";
 
 interface SetupProps {
   onDone: () => void;
@@ -27,7 +27,7 @@ export default function Setup({ onDone }: SetupProps) {
   const [sftpUser, setSftpUser] = useState("");
   const [sftpPass, setSftpPass] = useState("");
   const [handbrake, setHandbrake] = useState("");
-  const [encFamily, setEncFamily] = useState<EncoderFamily["id"]>("auto");
+  const [encFamily, setEncFamily] = useState<EncoderFamilyId>("auto");
   const [familyChosen, setFamilyChosen] = useState(false);
   const [encFound, setEncFound] = useState<string | null>(null);
   const [encError, setEncError] = useState<string | null>(null);
