@@ -221,7 +221,7 @@ export default function Settings() {
     setHbCli(data.handbrake_cli);
     setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
     setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
-    setEncFamily(data.encoder_family || 'auto');
+    setEncFamily(asFamilyId(data.encoder_family || 'auto'));
     setEncFallback(data.encoder_fallback_cpu !== 'false');
     setWebhookUser(data.webhook_username || '');
     setWebhookPass(data.webhook_password_set ? REDACTED : '');
