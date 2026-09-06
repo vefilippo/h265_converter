@@ -7,6 +7,8 @@ from transcoder.api.auth import require_auth
 from transcoder.api.deps import get_session as get_db
 from transcoder.api import state
 from transcoder.api.schemas import SettingsOut, SettingsUpdate
+from transcoder import encoders as _enc
+from transcoder.encoders import FAMILY_KEY, FALLBACK_KEY
 from transcoder.repo import get_setting, set_setting, get_effective
 from transcoder.scheduler import SchedulerController
 from transcoder import config as _cfg
@@ -55,6 +57,9 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     cfg = _cfg.settings
     updated: list[str] = []
 
+    # Read before the simple_fields loop below overwrites it.
+    previous_cli = get_setting(db, "handbrake_cli")
+
     if body.new_password is not None:
         current_hash = get_setting(db, "app_password_hash")
         if current_hash:
@@ -73,7 +78,9 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     simple_fields = [
         "sonarr_url", "radarr_url", "sftp_host", "sftp_port", "sftp_username",
         "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
-        "encoder_family", "encoder_fallback_cpu",
+        # These two keys are also read by transcoder.encoders, so they use the
+        # shared constants; the rest are local to this router and stay literal.
+        FAMILY_KEY, FALLBACK_KEY,
         "scheduler_run_at_startup", "webhook_username",
     ]
     for field in simple_fields:
@@ -103,6 +110,35 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
         schedule_changed = True
     if body.scheduler_run_at_startup is not None:
         schedule_changed = True
+
+    new_cli = getattr(body, "handbrake_cli", None)
+    if new_cli is not None and new_cli not in ("", _REDACTED):
+        if new_cli != previous_cli:
+            # The process-local memo of "this binary probes to unknown" is keyed
+            # on the path, so a changed path can't return a stale answer anyway;
+            # clearing it is free and keeps restart-free retry after a fix.
+            _enc.reset_probe_cache()
+
+        # Invalidate on PROVENANCE, not on "the setting changed". The only
+        # supported UI flow is Detect-then-Save: Detect probes the typed path and
+        # commits the blob, then Save arrives with that same path. Comparing
+        # against the old DB row would blank the detection the user just ran --
+        # and on a fresh install, where no handbrake_cli row exists at all, it
+        # blanked the setup wizard's detection on every first save.
+        #
+        # A blob with no recorded path (written before CLI_KEY existed) reports
+        # None: unknown provenance, which is NOT proof of a mismatch, so it is
+        # left alone. The next Detect stamps it, and the cost of keeping a
+        # possibly-stale cache is one Detect click, versus destroying a good one.
+        probed_cli = _enc.load_probed_cli(db)
+        if probed_cli is not None and probed_cli != new_cli:
+            # Those families describe a different binary: 'auto' could resolve to
+            # a family this one lacks, and an explicit family would miss its CPU
+            # fallback. Blank the blob (a falsy raw value reads as unknown to
+            # load_capabilities) rather than deleting the row, mirroring the
+            # post-restore clear.
+            set_setting(db, _enc.CAPABILITIES_KEY, "")
+            updated.append("encoder_capabilities_cleared")
 
     db.commit()
 

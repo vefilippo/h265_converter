@@ -113,12 +113,22 @@ def process_one_job(
         session.commit()
         job_log(session, job, f"Transcoding {item.title} (preset {job.preset})")
         if resolution.substituted:
-            requested = FAMILIES[resolution.requested]["label"]
-            job_log(
-                session, job,
-                f"{requested} is not available on this host; falling back to "
-                "CPU x265 — this will be substantially slower",
-            )
+            if resolution.requested not in FAMILIES:
+                # requested is "custom" or an unrecognised stored value
+                # (encoders.resolve's blank-custom-preset fallback) -- the
+                # host is fine, the user just left a custom preset blank.
+                job_log(
+                    session, job,
+                    "Custom encoder presets are blank or incomplete; using "
+                    "CPU x265 — this will be substantially slower",
+                )
+            else:
+                requested = FAMILIES[resolution.requested]["label"]
+                job_log(
+                    session, job,
+                    f"{requested} is not available on this host; falling back to "
+                    "CPU x265 — this will be substantially slower",
+                )
         elif resolution.detection_unknown:
             if resolution.family == CPU and resolution.requested == AUTO:
                 # 'auto' with unknown capabilities silently lands on CPU x265

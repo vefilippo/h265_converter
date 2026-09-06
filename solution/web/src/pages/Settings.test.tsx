@@ -112,6 +112,33 @@ test("encoder dropdown shows the family choices", async () => {
   expect(screen.getByRole("option", { name: /custom/i })).toBeInTheDocument();
 });
 
+test("self-heals to auto when the API returns an out-of-union encoder_family", async () => {
+  // A row stored out-of-union by a previous release (whose PUT had no
+  // validation) must not get hydrated verbatim -- the new Literal on the
+  // update schema would then reject it with a bare 422 on every save.
+  // Assert on the payload of an unrelated round-trip save (not just the
+  // <select>'s rendered DOM value, which jsdom/browsers silently coerce to
+  // the first option when the bound state doesn't match any option value --
+  // masking the real bug, which lives in React state, not the DOM).
+  const BAD_SETTINGS = { ...SETTINGS, encoder_family: "amd" };
+  const captured: { body?: string } = {};
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/settings") && (!init || init.method === "GET")) {
+      return new Response(JSON.stringify(BAD_SETTINGS), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    return makeFetch(captured)(input, init);
+  }));
+  renderPage();
+  await screen.findByRole("combobox", { name: /encoder/i });
+  fireEvent.click(screen.getByRole("button", { name: /save encoder settings/i }));
+  await waitFor(() => expect(captured.body).toBeTruthy());
+  const body = JSON.parse(captured.body!);
+  expect(body.encoder_family).toBe("auto");
+});
+
 test("preset fields are hidden unless Custom is selected", async () => {
   vi.stubGlobal("fetch", makeFetch({}));
   renderPage();

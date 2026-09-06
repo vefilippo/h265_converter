@@ -10,7 +10,8 @@ import { Select } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { api, getSettings, updateSettings, getEncoders, detectEncoders } from '../api/client';
 import BackupRestoreCard from './BackupRestoreCard';
-import type { SettingsUpdate, EncodersResponse } from '../api/types';
+import type { SettingsUpdate, EncodersResponse, EncoderFamilyId } from '../api/types';
+import { asFamilyId } from '../api/types';
 
 const REDACTED = '••••••••';
 
@@ -183,7 +184,7 @@ export default function Settings() {
   const [transSaved, setTransSaved] = useState(false);
   const [transError, setTransError] = useState<string | null>(null);
   const [transDirty, setTransDirty] = useState(false);
-  const [encFamily, setEncFamily] = useState('auto');
+  const [encFamily, setEncFamily] = useState<EncoderFamilyId>('auto');
   const [encFallback, setEncFallback] = useState(true);
   const [encInfo, setEncInfo] = useState<EncodersResponse | null>(null);
   const [detecting, setDetecting] = useState(false);
@@ -220,7 +221,7 @@ export default function Settings() {
     setHbCli(data.handbrake_cli);
     setHbPreset1080(data.handbrake_preset_1080 || 'H.265 NVENC 1080p');
     setHbPreset4k(data.handbrake_preset_4k || 'H.265 NVENC 2160p 4K');
-    setEncFamily(data.encoder_family || 'auto');
+    setEncFamily(asFamilyId(data.encoder_family || 'auto'));
     setEncFallback(data.encoder_fallback_cpu !== 'false');
     setWebhookUser(data.webhook_username || '');
     setWebhookPass(data.webhook_password_set ? REDACTED : '');
@@ -473,7 +474,7 @@ export default function Settings() {
             </Field>
             <Field htmlFor="enc-family" label="Encoder">
               <Select id="enc-family" value={encFamily}
-                onChange={e => { setEncFamily(e.target.value); setTransDirty(true); }}>
+                onChange={e => { setEncFamily(asFamilyId(e.target.value)); setTransDirty(true); }}>
                 <option value="auto">Auto (recommended)</option>
                 {(encInfo?.families ?? []).map(f => (
                   <option key={f.id} value={f.id}>{f.label}</option>

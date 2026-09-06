@@ -16,6 +16,26 @@ class DetectBody(BaseModel):
     handbrake_cli: str | None = None
 
 
+class EncoderFamilyOut(BaseModel):
+    id: str
+    label: str
+    preset_1080: str
+    preset_4k: str
+    hardware: bool
+    available: bool
+
+
+class EncodersOut(BaseModel):
+    available: list[str]
+    detected_at: str | None = None
+    families: list[EncoderFamilyOut]
+
+
+class DetectOut(EncodersOut):
+    ok: bool
+    error: str | None = None
+
+
 def _payload(available: set[str], detected_at: str | None) -> dict:
     return {
         "available": sorted(available),
@@ -34,17 +54,17 @@ def _payload(available: set[str], detected_at: str | None) -> dict:
     }
 
 
-@router.get("")
+@router.get("", response_model=EncodersOut)
 def list_encoders(db: Session = Depends(get_db)):
     """Catalog plus cached availability. Never shells out."""
     available, _unavailable, detected_at = encoders.load_capabilities(db)
     return _payload(available, detected_at)
 
 
-@router.post("/detect")
+@router.post("/detect", response_model=DetectOut)
 def detect(body: DetectBody, db: Session = Depends(get_db)):
     """Probe HandBrake and cache the result."""
-    cli = body.handbrake_cli or get_effective(db, "handbrake_cli", _cfg.settings.HANDBRAKE_CLI)
+    cli = (body.handbrake_cli or get_effective(db, "handbrake_cli", _cfg.settings.HANDBRAKE_CLI) or "").strip()
     if not cli:
         return {"ok": False, "error": "HandBrake CLI path is not set", **_payload(set(), None)}
 

@@ -12,12 +12,18 @@ import json
 import logging
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+from transcoder.config import settings as cfg
+
+log = logging.getLogger("transcoder")
 
 AUTO = "auto"
 CUSTOM = "custom"
 CPU = "cpu"
+
 
 # Preset names are verbatim from HandBrakeCLI 1.11.2 --preset-list. Note that
 # AMD presets are named "VCN" (HandBrake 1.11 renamed them) even though the
@@ -84,7 +90,9 @@ _NVENC_DLL_RE = re.compile(r"Cannot load nvEncodeAPI64\.dll", re.IGNORECASE)
 # not understand the output — an older/newer HandBrake with a different format,
 # or some other executable that happens to exit 0 — and must report unknown
 # rather than a confident (and wrong) {cpu}. See parse_capabilities().
-_BANNER_MENTIONS_RE = re.compile(r"(vcn|nvenc|qsv|nvEncodeAPI)", re.IGNORECASE)
+# "nvEncodeAPI64.dll" already contains "nvEnc", which the nvenc alternative
+# matches case-insensitively, so it needs no alternative of its own.
+_BANNER_MENTIONS_RE = re.compile(r"(vcn|nvenc|qsv)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -137,6 +145,20 @@ def _presets(family: str) -> tuple[str, str]:
     return meta["preset_1080"], meta["preset_4k"]
 
 
+def _custom_or_cpu(custom_1080: str, custom_4k: str, requested: str,
+                    unknown: bool) -> Resolution:
+    """Custom presets, unless either is blank -- an empty --preset argument
+    fails the job with an opaque HandBrake error, so fall back to CPU and mark
+    the swap so the worker logs it."""
+    if not (custom_1080 or "").strip() or not (custom_4k or "").strip():
+        log.warning(
+            "Custom encoder selected but presets are blank; using CPU x265 presets"
+        )
+        p1080, p4k = _presets(CPU)
+        return Resolution(p1080, p4k, CPU, requested, True, unknown)
+    return Resolution(custom_1080, custom_4k, CUSTOM, requested, False, unknown)
+
+
 def resolve(
     family: str,
     available: set[str],
@@ -160,7 +182,7 @@ def resolve(
     unknown = not available
 
     if family == CUSTOM:
-        return Resolution(custom_1080, custom_4k, CUSTOM, CUSTOM, False, unknown)
+        return _custom_or_cpu(custom_1080, custom_4k, CUSTOM, unknown)
 
     if family == AUTO:
         if unknown:
@@ -179,7 +201,7 @@ def resolve(
 
     if family not in FAMILIES:
         # Defensive: an unrecognised stored value behaves like custom.
-        return Resolution(custom_1080, custom_4k, CUSTOM, family, False, unknown)
+        return _custom_or_cpu(custom_1080, custom_4k, family, unknown)
 
     # Substitute ONLY on an explicit negative. A positive report wins over a
     # contradictory negative in the same blob: substitution is the harmful
@@ -205,9 +227,6 @@ def infer_family(preset_1080: str, preset_4k: str) -> str:
         if preset_1080 == meta["preset_1080"] and preset_4k == meta["preset_4k"]:
             return fid
     return CUSTOM
-
-
-log = logging.getLogger("transcoder")
 
 
 def probe(handbrake_cli: str, timeout: float = 30.0) -> tuple[set[str], set[str]]:
@@ -251,6 +270,49 @@ CAPABILITIES_KEY = "encoder_capabilities"
 FAMILY_KEY = "encoder_family"
 FALLBACK_KEY = "encoder_fallback_cpu"
 
+# Key inside the capabilities blob naming the HandBrake binary it was probed
+# against. Lets a caller ask "is this cache about the binary now configured?"
+# instead of the weaker "did the setting change?" -- see load_probed_cli().
+CLI_KEY = "cli"
+
+
+def _load_blob(session) -> dict | None:
+    """Parse the cached capabilities blob, or None when absent/corrupt."""
+    from transcoder.repo import get_setting
+
+    raw = get_setting(session, CAPABILITIES_KEY)
+    if not raw:
+        return None
+    try:
+        blob = json.loads(raw)
+    except ValueError:
+        log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
+        return None
+    if not isinstance(blob, dict):
+        log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
+        return None
+    return blob
+
+
+def load_probed_cli(session) -> str | None:
+    """The HandBrake path the cached capabilities were probed against.
+
+    Deliberately a separate accessor rather than a fourth element on
+    load_capabilities(): only cache-invalidation asks this question, while every
+    other caller wants the three-tuple, and widening it would churn each of them
+    for a value they immediately discard.
+
+    ``None`` means UNKNOWN PROVENANCE -- nothing cached, a corrupt blob, or a
+    blob written before this key existed. Unknown provenance is not "probed
+    against a different binary": callers must not invalidate on it, or the first
+    save after an upgrade would discard a perfectly good detection.
+    """
+    blob = _load_blob(session)
+    if blob is None:
+        return None
+    cli = blob.get(CLI_KEY)
+    return cli if isinstance(cli, str) and cli else None
+
 
 def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
     """Read the cached probe result as ``(available, unavailable, detected_at)``.
@@ -259,17 +321,48 @@ def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
     negatives were recorded has no ``unavailable`` key and therefore reports
     nothing as explicitly absent — the safe direction, since only an explicit
     negative may substitute an encoder away from the user's choice.
-    """
-    from transcoder.repo import get_setting
 
-    raw = get_setting(session, CAPABILITIES_KEY)
-    if not raw:
+    Empty-set-means-unknown is total: whenever the returned ``available`` set is
+    empty, ``detected_at`` is ``None``. A caller can therefore never conclude
+    "we successfully detected nothing". A malformed ``available`` invalidates
+    the whole blob; a malformed ``unavailable`` degrades to "no explicit
+    negatives" rather than discarding an otherwise valid positive set.
+    """
+    blob = _load_blob(session)
+    if blob is None:
         return set(), set(), None
+
+    def _str_set(value) -> set[str] | None:
+        """None means 'malformed'. A bare string is the dangerous case: it would
+        iterate into a truthy set of single characters."""
+        if value is None:
+            return set()
+        if not isinstance(value, (list, tuple)):
+            return None
+        if not all(isinstance(v, str) for v in value):
+            return None
+        return set(value)
+
     try:
-        blob = json.loads(raw)
-        return (set(blob["available"]),
-                set(blob.get("unavailable") or []),
-                blob.get("detected_at"))
+        available = _str_set(blob["available"])
+        unavailable = _str_set(blob.get("unavailable"))
+        if available is None:
+            raise ValueError("available is not a list of strings")
+        if unavailable is None:
+            # A corrupt negative list degrades to "no explicit negatives" --
+            # the safe direction -- rather than discarding a valid positive set.
+            log.warning("Ignoring corrupt 'unavailable' in %s", CAPABILITIES_KEY)
+            unavailable = set()
+        detected_at = blob.get("detected_at")
+        if not isinstance(detected_at, str):
+            # EncodersOut.detected_at is `str | None`; a hand-edited numeric
+            # value would reach the response model and 500 GET /api/encoders.
+            # An unreadable timestamp is cosmetic, so drop it and keep the sets.
+            detected_at = None
+        if not available:
+            # empty-set-means-unknown is total: no timestamp without a result.
+            return set(), set(), None
+        return available, unavailable, detected_at
     except (ValueError, KeyError, TypeError):
         log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
         return set(), set(), None
@@ -279,8 +372,20 @@ def store_capabilities(
     session,
     available: set[str],
     unavailable: set[str] | frozenset[str] = frozenset(),
+    *,
+    cli: str = "",
 ) -> str:
-    """Cache a probe result; returns the ISO-8601 detection timestamp."""
+    """Cache a probe result; returns the ISO-8601 detection timestamp.
+
+    ``cli`` is the HandBrake binary the result was probed against, recorded so
+    cache invalidation can compare provenance instead of guessing from the
+    stored setting. Keyword-only and optional so existing positional callers
+    (and test fixtures that seed a cache) are unaffected.
+    """
+    # transcoder.repo pulls in transcoder.db, which constructs a SQLAlchemy
+    # engine at import time. Importing it at module scope would make merely
+    # importing this catalog open a database connection, so the repo imports
+    # stay function-local. transcoder.config has no such side effect.
     from transcoder.repo import set_setting
 
     detected_at = datetime.now(timezone.utc).isoformat()
@@ -288,6 +393,7 @@ def store_capabilities(
         "available": sorted(available),
         "unavailable": sorted(unavailable),
         "detected_at": detected_at,
+        CLI_KEY: cli,
     }))
     return detected_at
 
@@ -300,7 +406,48 @@ def detect_and_store(
     available, unavailable = probe(handbrake_cli)
     if not available:
         return set(), set(), None
-    return available, unavailable, store_capabilities(session, available, unavailable)
+    return available, unavailable, store_capabilities(
+        session, available, unavailable, cli=handbrake_cli
+    )
+
+
+# Process-local memo of CLI paths whose probe came back unknown, as
+# ``path -> monotonic timestamp of the failed probe``. The DB must never cache
+# "unknown" (a broken HandBrake that gets fixed has to be picked up without a
+# manual reset), but without this a permanently unreadable banner costs one
+# subprocess per job. Dying with the process keeps restart-to-retry.
+#
+# The memo EXPIRES because probe() collapses every failure class into the same
+# empty result: a missing exe (permanent) looks exactly like a 30s timeout on a
+# box busy transcoding, an antivirus lock, or a banner truncated mid-write
+# (which exits 0 and merely parses to unknown, so it is not even an exception).
+# This process runs for weeks, and with the default family `auto` an unknown
+# result resolves to CPU x265 -- so hardening one transient failure for the
+# process lifetime would put every later job on an hours-long software encode
+# while HandBrake was healthy. The memo saves ~1s of subprocess per job; the
+# failure mode costs days of CPU. A TTL keeps almost all of the saving (one
+# probe per 15 min in the worst case) and self-heals every failure class,
+# including the ones that raise nothing at all.
+PROBE_MEMO_TTL_SECONDS = 900.0
+
+_unknown_probes: dict[str, float] = {}
+
+
+def _now() -> float:
+    """Monotonic clock seam -- monotonic so a system clock change (NTP step,
+    DST) can neither freeze nor prematurely expire the memo."""
+    return time.monotonic()
+
+
+def reset_probe_cache() -> None:
+    """Forget memoised unknown probes. Call when the HandBrake path changes."""
+    _unknown_probes.clear()
+
+
+def _unknown_memo_is_fresh(handbrake_cli: str) -> bool:
+    """True while a previous unknown result for this path may still be served."""
+    stamp = _unknown_probes.get(handbrake_cli)
+    return stamp is not None and (_now() - stamp) < PROBE_MEMO_TTL_SECONDS
 
 
 def get_or_detect_capabilities(
@@ -309,17 +456,28 @@ def get_or_detect_capabilities(
     """Cached capabilities, probing once lazily if nothing is cached yet.
 
     This is what lets 'auto' work on a fresh install without adding a subprocess
-    call to every server start.
+    call to every server start. An unknown result is memoised in memory only,
+    keyed on the CLI path, and only for PROBE_MEMO_TTL_SECONDS: the DB still
+    caches nothing, so a restart, reset_probe_cache(), or simply waiting out the
+    TTL retries a HandBrake that has since been fixed (or was only ever
+    transiently unreachable).
     """
     available, unavailable, detected_at = load_capabilities(session)
     if available:
         return available, unavailable, detected_at
-    return detect_and_store(session, handbrake_cli)
+    if _unknown_memo_is_fresh(handbrake_cli):
+        return set(), set(), None
+    result = detect_and_store(session, handbrake_cli)
+    if result[0]:
+        # Detected fine: drop any expired entry rather than leaving it to rot.
+        _unknown_probes.pop(handbrake_cli, None)
+    else:
+        _unknown_probes[handbrake_cli] = _now()
+    return result
 
 
 def resolve_for_job(session) -> Resolution:
     """Resolve the preset pair for a job from stored settings + capabilities."""
-    from transcoder.config import settings as cfg
     from transcoder.repo import get_effective
 
     family = get_effective(session, FAMILY_KEY, cfg.ENCODER_FAMILY)
@@ -347,7 +505,6 @@ def migrate_encoder_family(session) -> str | None:
     setup. The presence of `handbrake_preset_1080` in the DB is therefore the
     signal for "this install predates encoder families".
     """
-    from transcoder.config import settings as cfg
     from transcoder.repo import get_setting, set_setting
 
     if get_setting(session, FAMILY_KEY) is not None:

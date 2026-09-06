@@ -33,18 +33,6 @@ SILENT_ON_NVENC_BANNER = """[10:00:00] vcn: is available
 """
 
 
-def test_parse_amd_banner_finds_vcn_and_cpu():
-    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
-
-
-def test_parse_treats_nvenc_dll_failure_as_unavailable():
-    assert "nvenc" not in parse_capabilities(AMD_BANNER)
-
-
-def test_parse_does_not_confuse_not_available_with_available():
-    assert "qsv" not in parse_capabilities(AMD_BANNER)
-
-
 def test_parse_nvidia_banner():
     assert parse_capabilities(NVIDIA_BANNER) == {"nvenc", CPU}
 
@@ -69,14 +57,6 @@ def test_parse_returns_empty_set_for_unparseable_banner():
     # read as "cpu only" — that would make resolve() substitute CPU under an
     # explicitly-chosen hardware family.
     assert parse_capabilities("garbage output\n") == set()
-
-
-def test_parse_recognised_banner_still_includes_cpu():
-    assert CPU in parse_capabilities(NVIDIA_BANNER)
-
-
-def test_parse_amd_banner_returns_exactly_vcn_and_cpu():
-    assert parse_capabilities(AMD_BANNER) == {"vcn", CPU}
 
 
 def test_auto_prefers_vcn_over_cpu():
@@ -185,7 +165,9 @@ def test_explicit_cpu_is_never_reported_as_substituted():
 
 
 def test_unrecognised_explicit_family_behaves_like_custom():
-    r = resolve("vce", {"vcn", CPU})
+    # Non-blank presets: the blank-preset fallback-to-CPU path is covered
+    # separately by test_unrecognised_family_with_blank_presets_falls_back_to_cpu.
+    r = resolve("vce", {"vcn", CPU}, custom_1080="Fast 1080p30", custom_4k="Fast 2160p60")
     assert r.family == CUSTOM
     assert r.requested == "vce"
 
@@ -193,18 +175,9 @@ def test_unrecognised_explicit_family_behaves_like_custom():
 # ── "Unmentioned is unknown", at HandBrake's own reporting granularity ────────
 
 
-def test_parse_unavailable_reads_the_explicit_negatives_from_the_amd_banner():
-    # qsv says so in words; nvenc says so by failing to load its runtime DLL.
-    assert parse_unavailable(AMD_BANNER) == {"qsv", "nvenc"}
-
-
 def test_parse_unavailable_is_empty_for_unrecognisable_output():
     assert parse_unavailable("") == set()
     assert parse_unavailable("garbage output") == set()
-
-
-def test_parse_unavailable_ignores_a_positively_reported_family():
-    assert "vcn" not in parse_unavailable(AMD_BANNER)
 
 
 def test_amd_banner_splits_into_available_and_unavailable():
@@ -269,3 +242,59 @@ def test_auto_selection_ignores_the_unavailable_set():
     r = resolve(AUTO, {"vcn", CPU}, {"qsv", "nvenc"})
     assert r.family == "vcn"
     assert r.substituted is False
+
+
+def test_nvenc_dll_line_alone_is_a_recognised_banner():
+    """The real-world NVIDIA-missing banner has no '<family>:' line at all.
+    It must still count as 'we understood this banner', otherwise a working
+    AMD box with no NVIDIA runtime would report unknown."""
+    banner = "[11:44:47] Cannot load nvEncodeAPI64.dll\nHandBrake 1.11.2\n"
+    assert encoders.parse_capabilities(banner) == {"cpu"}
+    assert encoders.parse_unavailable(banner) == {"nvenc"}
+
+
+# ── Blank custom presets must not reach HandBrake ─────────────────────────────
+
+
+def test_custom_with_blank_presets_falls_back_to_cpu():
+    """Handing HandBrake --preset "" fails the job with an opaque error. CPU
+    x265 is slow but correct, and substituted=True makes the swap visible in
+    the job log."""
+    r = encoders.resolve("custom", {"vcn", "cpu"}, custom_1080="", custom_4k="")
+    assert (r.preset_1080, r.preset_4k) == ("H.265 MKV 1080p30", "H.265 MKV 2160p60 4K")
+    assert r.family == "cpu"
+    assert r.requested == "custom"
+    assert r.substituted is True
+
+
+def test_custom_with_one_blank_preset_falls_back_to_cpu():
+    r = encoders.resolve("custom", {"cpu"}, custom_1080="Fast 1080p30", custom_4k="   ")
+    assert r.family == "cpu"
+    assert r.substituted is True
+
+
+def test_custom_with_both_presets_set_is_untouched():
+    r = encoders.resolve("custom", {"cpu"}, custom_1080="Fast 1080p30", custom_4k="Fast 2160p60")
+    assert (r.preset_1080, r.preset_4k) == ("Fast 1080p30", "Fast 2160p60")
+    assert r.family == "custom"
+    assert r.substituted is False
+
+
+def test_unrecognised_family_with_blank_presets_falls_back_to_cpu():
+    r = encoders.resolve("wat", {"cpu"}, custom_1080="", custom_4k="")
+    assert r.family == "cpu"
+    assert r.requested == "wat"
+    assert r.substituted is True
+
+
+def test_banner_parsing_is_case_insensitive():
+    banner = "[11:44:47] VCN: IS AVAILABLE\n[11:44:47] QSV: NOT AVAILABLE ON THIS SYSTEM\n"
+    assert encoders.parse_capabilities(banner) == {"vcn", "cpu"}
+    assert encoders.parse_unavailable(banner) == {"qsv"}
+
+
+def test_parse_unavailable_reads_vcn_and_nvenc_negatives():
+    """parse_unavailable was only ever asserted on qsv negatives, so the vcn
+    and nvenc alternatives of the regex had no coverage in this wording."""
+    assert encoders.parse_unavailable(NVIDIA_BANNER) == {"vcn", "qsv"}
+    assert encoders.parse_unavailable(INTEL_BANNER) == {"nvenc"}

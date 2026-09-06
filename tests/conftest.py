@@ -63,9 +63,16 @@ def _no_encoder_probe(monkeypatch):
     Returns two empty sets, i.e. "capabilities unknown". Tests that care about
     specific hardware seed the cache with encoders.store_capabilities() or
     monkeypatch encoders.probe themselves, which overrides this.
+
+    The unknown-probe memo is cleared here too, before AND after every test.
+    It is process-global (and, because the stub above always reports unknown,
+    every test that resolves a job writes to it), so a module-local fixture
+    would leave every other module's probes leaking into each other and make
+    failures depend on collection order.
     """
-    try:
-        from transcoder import encoders
-    except ImportError:
-        return  # module does not exist yet in earlier tasks
+    from transcoder import encoders
+
     monkeypatch.setattr(encoders, "probe", lambda *a, **k: (set(), set()))
+    encoders.reset_probe_cache()
+    yield
+    encoders.reset_probe_cache()
