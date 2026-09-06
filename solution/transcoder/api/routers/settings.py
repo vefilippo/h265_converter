@@ -7,6 +7,7 @@ from transcoder.api.auth import require_auth
 from transcoder.api.deps import get_session as get_db
 from transcoder.api import state
 from transcoder.api.schemas import SettingsOut, SettingsUpdate
+from transcoder.encoders import FAMILY_KEY, FALLBACK_KEY
 from transcoder.repo import get_setting, set_setting, get_effective
 from transcoder.scheduler import SchedulerController
 from transcoder import config as _cfg
@@ -73,7 +74,9 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     simple_fields = [
         "sonarr_url", "radarr_url", "sftp_host", "sftp_port", "sftp_username",
         "handbrake_cli", "handbrake_preset_1080", "handbrake_preset_4k",
-        "encoder_family", "encoder_fallback_cpu",
+        # These two keys are also read by transcoder.encoders, so they use the
+        # shared constants; the rest are local to this router and stay literal.
+        FAMILY_KEY, FALLBACK_KEY,
         "scheduler_run_at_startup", "webhook_username",
     ]
     for field in simple_fields:

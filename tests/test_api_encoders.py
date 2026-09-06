@@ -107,6 +107,17 @@ def test_encoders_response_shape_and_order(api):
         assert set(f) == {"id", "label", "preset_1080", "preset_4k", "hardware", "available"}
 
 
+def test_whitespace_only_cli_path_reports_not_set(api):
+    """A whitespace path is truthy, so it used to be probed -- the user saw
+    'Could not run    .' instead of the friendly not-set message."""
+    client, _ = api
+    r = client.post("/api/encoders/detect", json={"handbrake_cli": "   "})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["error"] == "HandBrake CLI path is not set"
+
+
 def test_encoders_routes_declare_response_models():
     """The shape is a hard contract for committed frontend code; without a
     response_model it is absent from OpenAPI and unchecked by pydantic."""

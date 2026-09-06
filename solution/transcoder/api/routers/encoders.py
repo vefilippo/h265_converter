@@ -64,7 +64,7 @@ def list_encoders(db: Session = Depends(get_db)):
 @router.post("/detect", response_model=DetectOut)
 def detect(body: DetectBody, db: Session = Depends(get_db)):
     """Probe HandBrake and cache the result."""
-    cli = body.handbrake_cli or get_effective(db, "handbrake_cli", _cfg.settings.HANDBRAKE_CLI)
+    cli = (body.handbrake_cli or get_effective(db, "handbrake_cli", _cfg.settings.HANDBRAKE_CLI) or "").strip()
     if not cli:
         return {"ok": False, "error": "HandBrake CLI path is not set", **_payload(set(), None)}
 
