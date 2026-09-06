@@ -3,6 +3,27 @@ import socket
 import pytest
 
 
+def test_main_wires_restore_to_server_shutdown(monkeypatch):
+    import transcoder.api.__main__ as m
+    import transcoder.api.app as app_module
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    monkeypatch.setattr(app_module, "create_app", lambda: app)
+    monkeypatch.setattr(m, "port_is_free", lambda *a: True)
+    servers = []
+
+    def run(server):
+        servers.append(server)
+        app.state.request_shutdown()
+        assert server.should_exit
+
+    monkeypatch.setattr(m.uvicorn.Server, "run", run)
+    monkeypatch.setattr(m.uvicorn, "run", lambda *a, **k: None)
+    m.main()
+    assert len(servers) == 1
+
+
 def test_port_is_free_reports_false_when_something_is_listening():
     from transcoder.api.__main__ import port_is_free
 

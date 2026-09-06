@@ -30,11 +30,20 @@ def main():
         )
         raise SystemExit(1)
 
-    # Import create_app only after the port check passes, so app construction
-    # (and any lifespan work) never runs when we are about to refuse to start.
+    # Construct the app only after refusing an occupied port.
     from transcoder.api.app import create_app
 
-    uvicorn.run(create_app(), host=settings.API_HOST, port=settings.API_PORT)
+    app = create_app()
+    server = uvicorn.Server(uvicorn.Config(
+        app, host=settings.API_HOST, port=settings.API_PORT,
+        timeout_graceful_shutdown=5,  # Do not wait forever for SSE streams.
+    ))
+
+    def request_shutdown():
+        server.should_exit = True
+
+    app.state.request_shutdown = request_shutdown
+    server.run()
 
 
 if __name__ == "__main__":

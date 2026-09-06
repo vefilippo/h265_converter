@@ -11,7 +11,7 @@ Automated H.265/HEVC transcoding pipeline for your media library. Integrates wit
 - **Scheduler** — cron-based auto-runs (APScheduler) with a run-at-startup toggle.
 - **Webhook triggers** — Sonarr/Radarr call the app the moment a file is imported, so it's discovered and queued for transcoding instantly instead of waiting for the next scan.
 - **Authentication** — single-password login, bcrypt-hashed and stored in the DB after first login, with a session cookie.
-- **Backup & Restore** — download an encrypted (AES-256-GCM) state backup (DB + .env) from Settings; restore it onto a freshly installed instance to clone it.
+- **Backup & Restore** — download a state backup (DB + AES-256-GCM-encrypted .env) from Settings; restore it onto a freshly installed instance to clone jobs, library, exclusions and settings. Restore gracefully stops the API and waits for its process to exit before restarting and replacing the database. Start the service with `python -m transcoder.api` (as the supplied scripts do) to enable automatic restart. Jobs captured in progress are requeued at startup.
 - **Windows tray app** — green/grey health dot, start/stop the server, and toast notifications on job done / failed / queue cleared.
 - **Logging** — daily-rotating files in `log/` with a 30-day archive and a consistent format across all components.
 - **CLI** — headless `scan` / `run` / `queue` commands for scripted use.

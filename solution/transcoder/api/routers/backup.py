@@ -2,7 +2,7 @@ import zipfile
 from datetime import datetime, timezone
 
 from cryptography.exceptions import InvalidTag
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -40,7 +40,8 @@ def create_backup(body: BackupRequest):
 
 
 @router.post("/restore", status_code=202, dependencies=[Depends(require_auth)])
-async def restore_backup(file: UploadFile = File(...), passphrase: str = Form(...)):
+async def restore_backup(request: Request, background_tasks: BackgroundTasks,
+                         file: UploadFile = File(...), passphrase: str = Form(...)):
     _MAX_UPLOAD = 1024 * 1024 * 1024  # 1 GiB
     if file.size is not None and file.size > _MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="backup file too large")
@@ -49,7 +50,14 @@ async def restore_backup(file: UploadFile = File(...), passphrase: str = Form(..
         db_bytes, env_text, _manifest = read_backup(zip_bytes, passphrase)
     except (ValueError, KeyError, zipfile.BadZipFile, InvalidTag):
         raise HTTPException(status_code=400, detail="wrong passphrase or corrupt backup")
+    shutdown = getattr(request.app.state, "request_shutdown", None)
+    if shutdown is None:
+        raise HTTPException(status_code=503, detail="Restore requires starting the server with python -m transcoder.api")
+    if getattr(request.app.state, "restoring", False):
+        raise HTTPException(status_code=409, detail="A restore is already in progress")
     db_path = db_path_from_url(settings.DATABASE_URL)
     stage_restore(db_bytes, env_text, _base_dir(db_path))
     schedule_relaunch(port=settings.API_PORT)
+    request.app.state.restoring = True
+    background_tasks.add_task(shutdown)
     return {"status": "restarting"}

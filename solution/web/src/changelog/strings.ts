@@ -2,6 +2,8 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_0.entry.restore_restart":
+      "Backup restore now restarts the server and applies saved jobs, library, exclusions and settings. The dashboard waits for the restart instead of reloading unchanged data.",
     "changelog.1_1_0.entry.encoder_family":
       "The HandBrake encoder is now a detected, selectable setting: AMD VCN, NVIDIA NVENC, Intel QSV, CPU x265 or your own presets, with an Auto mode that picks the best encoder your machine actually reports. Fresh installs on AMD or Intel hardware no longer fail every job on hardcoded NVENC presets.",
     "changelog.1_0_1.label": "Jobs list fixes",

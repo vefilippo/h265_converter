@@ -43,7 +43,7 @@ export default function BackupRestoreCard() {
           if (res.ok) { location.reload(); return; }
         } catch { /* server still down */ }
       }
-      setStatus('Restore applied, but the server did not come back — check the service.');
+      setStatus('Could not confirm the restore completed — check the service.');
     } catch (e) {
       setStatus(`Restore failed: ${(e as Error).message}`);
     }

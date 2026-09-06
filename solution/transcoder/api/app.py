@@ -113,6 +113,8 @@ def create_app(start_worker: bool = True) -> FastAPI:
 
     @app.get("/api/health")
     def health():
+        if getattr(app.state, "restoring", False):
+            return JSONResponse(status_code=503, content={"status": "restarting"})
         return {"status": "ok"}
 
     app.add_middleware(SessionMiddleware, secret_key=resolve_secret_key(), same_site="lax")

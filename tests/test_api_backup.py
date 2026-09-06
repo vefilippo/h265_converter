@@ -30,6 +30,8 @@ def test_backup_returns_zip(api, tmp_path, monkeypatch):
 
 def test_restore_stages_and_returns_202(api, tmp_path, monkeypatch):
     client, _ = api
+    shutdown = []
+    client.app.state.request_shutdown = lambda: shutdown.append(True)
     src = tmp_path / "src.db"; sqlite3.connect(str(src)).close()
     (tmp_path / "src.env").write_text("X=1\n", encoding="utf-8")
     blob = backup.make_backup(str(src), str(tmp_path / "src.env"), "pw", created_at="now")
@@ -43,6 +45,23 @@ def test_restore_stages_and_returns_202(api, tmp_path, monkeypatch):
                     data={"passphrase": "pw"})
     assert r.status_code == 202 and r.json()["status"] == "restarting"
     assert staged["env"] == "X=1\n"
+    assert shutdown == [True]
+    assert client.get("/api/health").status_code == 503
+
+
+def test_restore_rejected_without_restart_support(api, tmp_path, monkeypatch):
+    client, _ = api
+    src = tmp_path / "src.db"
+    sqlite3.connect(src).close()
+    blob = backup.make_backup(str(src), str(tmp_path / "missing.env"), "pw")
+    staged = []
+    monkeypatch.setattr("transcoder.api.routers.backup.stage_restore",
+                        lambda *a: staged.append(True))
+    monkeypatch.setattr("transcoder.api.routers.backup.schedule_relaunch", lambda **k: None)
+    response = client.post("/api/restore", files={"file": ("b.zip", blob)},
+                           data={"passphrase": "pw"})
+    assert response.status_code == 503
+    assert not staged
 
 
 def test_restore_wrong_passphrase_400(api, tmp_path, monkeypatch):
