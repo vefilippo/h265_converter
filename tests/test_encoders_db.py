@@ -43,6 +43,46 @@ def test_load_capabilities_reads_an_old_blob_without_negatives(session):
     assert unavailable == set()
 
 
+def test_load_capabilities_rejects_a_non_list_available(session):
+    """A bare string parses to a set of CHARACTERS -- {"v","c","n"} -- which is
+    truthy and therefore reads as 'capabilities known'. That silently disables
+    the unknown-is-not-unavailable guard, so it must be rejected as corrupt."""
+    set_setting(session, CAPABILITIES_KEY, json.dumps(
+        {"available": "vcn", "detected_at": "2026-01-01T00:00:00+00:00"}))
+    session.commit()
+    assert load_capabilities(session) == (set(), set(), None)
+
+
+def test_load_capabilities_rejects_non_string_members(session):
+    set_setting(session, CAPABILITIES_KEY, json.dumps(
+        {"available": ["vcn", 7], "detected_at": "2026-01-01T00:00:00+00:00"}))
+    session.commit()
+    assert load_capabilities(session) == (set(), set(), None)
+
+
+def test_load_capabilities_ignores_a_non_list_unavailable(session):
+    """A corrupt NEGATIVE list must degrade to 'no explicit negatives' rather
+    than poisoning the whole read: negatives are the only thing that may
+    substitute an encoder away from the user's choice."""
+    set_setting(session, CAPABILITIES_KEY, json.dumps(
+        {"available": ["vcn", "cpu"], "unavailable": "qsv",
+         "detected_at": "2026-01-01T00:00:00+00:00"}))
+    session.commit()
+    available, unavailable, detected_at = load_capabilities(session)
+    assert available == {"vcn", "cpu"}
+    assert unavailable == set()
+    assert detected_at == "2026-01-01T00:00:00+00:00"
+
+
+def test_load_capabilities_nulls_detected_at_when_available_is_empty(session):
+    """empty-set-means-unknown must be total: a timestamp beside an empty set
+    would let a caller conclude 'we successfully detected nothing'."""
+    set_setting(session, CAPABILITIES_KEY, json.dumps(
+        {"available": [], "detected_at": "2026-01-01T00:00:00+00:00"}))
+    session.commit()
+    assert load_capabilities(session) == (set(), set(), None)
+
+
 def test_detect_and_store_persists_probe_result(session, monkeypatch):
     monkeypatch.setattr(encoders, "probe", lambda cli, **kw: ({"vcn", CPU}, {"nvenc"}))
     available, unavailable, detected_at = detect_and_store(session, "hb.exe")

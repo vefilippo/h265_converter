@@ -266,17 +266,46 @@ def load_capabilities(session) -> tuple[set[str], set[str], str | None]:
     negatives were recorded has no ``unavailable`` key and therefore reports
     nothing as explicitly absent — the safe direction, since only an explicit
     negative may substitute an encoder away from the user's choice.
+
+    Empty-set-means-unknown is total: whenever the returned ``available`` set is
+    empty, ``detected_at`` is ``None``. A caller can therefore never conclude
+    "we successfully detected nothing". A malformed ``available`` invalidates
+    the whole blob; a malformed ``unavailable`` degrades to "no explicit
+    negatives" rather than discarding an otherwise valid positive set.
     """
     from transcoder.repo import get_setting
 
     raw = get_setting(session, CAPABILITIES_KEY)
     if not raw:
         return set(), set(), None
+
+    def _str_set(value) -> set[str] | None:
+        """None means 'malformed'. A bare string is the dangerous case: it would
+        iterate into a truthy set of single characters."""
+        if value is None:
+            return set()
+        if not isinstance(value, (list, tuple)):
+            return None
+        if not all(isinstance(v, str) for v in value):
+            return None
+        return set(value)
+
     try:
         blob = json.loads(raw)
-        return (set(blob["available"]),
-                set(blob.get("unavailable") or []),
-                blob.get("detected_at"))
+        available = _str_set(blob["available"])
+        unavailable = _str_set(blob.get("unavailable"))
+        if available is None:
+            raise ValueError("available is not a list of strings")
+        if unavailable is None:
+            # A corrupt negative list degrades to "no explicit negatives" --
+            # the safe direction -- rather than discarding a valid positive set.
+            log.warning("Ignoring corrupt 'unavailable' in %s", CAPABILITIES_KEY)
+            unavailable = set()
+        detected_at = blob.get("detected_at")
+        if not available:
+            # empty-set-means-unknown is total: no timestamp without a result.
+            return set(), set(), None
+        return available, unavailable, detected_at
     except (ValueError, KeyError, TypeError):
         log.warning("Ignoring corrupt %s setting", CAPABILITIES_KEY)
         return set(), set(), None
