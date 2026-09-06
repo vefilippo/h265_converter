@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -410,16 +411,43 @@ def detect_and_store(
     )
 
 
-# Process-local memo of CLI paths whose probe came back unknown. The DB must
-# never cache "unknown" (a broken HandBrake that gets fixed has to be picked up
-# without a manual reset), but without this a permanently unreadable banner
-# costs one subprocess per job. Dying with the process keeps restart-to-retry.
-_unknown_probes: set[str] = set()
+# Process-local memo of CLI paths whose probe came back unknown, as
+# ``path -> monotonic timestamp of the failed probe``. The DB must never cache
+# "unknown" (a broken HandBrake that gets fixed has to be picked up without a
+# manual reset), but without this a permanently unreadable banner costs one
+# subprocess per job. Dying with the process keeps restart-to-retry.
+#
+# The memo EXPIRES because probe() collapses every failure class into the same
+# empty result: a missing exe (permanent) looks exactly like a 30s timeout on a
+# box busy transcoding, an antivirus lock, or a banner truncated mid-write
+# (which exits 0 and merely parses to unknown, so it is not even an exception).
+# This process runs for weeks, and with the default family `auto` an unknown
+# result resolves to CPU x265 -- so hardening one transient failure for the
+# process lifetime would put every later job on an hours-long software encode
+# while HandBrake was healthy. The memo saves ~1s of subprocess per job; the
+# failure mode costs days of CPU. A TTL keeps almost all of the saving (one
+# probe per 15 min in the worst case) and self-heals every failure class,
+# including the ones that raise nothing at all.
+PROBE_MEMO_TTL_SECONDS = 900.0
+
+_unknown_probes: dict[str, float] = {}
+
+
+def _now() -> float:
+    """Monotonic clock seam -- monotonic so a system clock change (NTP step,
+    DST) can neither freeze nor prematurely expire the memo."""
+    return time.monotonic()
 
 
 def reset_probe_cache() -> None:
     """Forget memoised unknown probes. Call when the HandBrake path changes."""
     _unknown_probes.clear()
+
+
+def _unknown_memo_is_fresh(handbrake_cli: str) -> bool:
+    """True while a previous unknown result for this path may still be served."""
+    stamp = _unknown_probes.get(handbrake_cli)
+    return stamp is not None and (_now() - stamp) < PROBE_MEMO_TTL_SECONDS
 
 
 def get_or_detect_capabilities(
@@ -429,17 +457,22 @@ def get_or_detect_capabilities(
 
     This is what lets 'auto' work on a fresh install without adding a subprocess
     call to every server start. An unknown result is memoised in memory only,
-    keyed on the CLI path: the DB still caches nothing, so a restart (or
-    reset_probe_cache()) retries a HandBrake that has since been fixed.
+    keyed on the CLI path, and only for PROBE_MEMO_TTL_SECONDS: the DB still
+    caches nothing, so a restart, reset_probe_cache(), or simply waiting out the
+    TTL retries a HandBrake that has since been fixed (or was only ever
+    transiently unreachable).
     """
     available, unavailable, detected_at = load_capabilities(session)
     if available:
         return available, unavailable, detected_at
-    if handbrake_cli in _unknown_probes:
+    if _unknown_memo_is_fresh(handbrake_cli):
         return set(), set(), None
     result = detect_and_store(session, handbrake_cli)
-    if not result[0]:
-        _unknown_probes.add(handbrake_cli)
+    if result[0]:
+        # Detected fine: drop any expired entry rather than leaving it to rot.
+        _unknown_probes.pop(handbrake_cli, None)
+    else:
+        _unknown_probes[handbrake_cli] = _now()
     return result
 
 
