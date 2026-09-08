@@ -2,6 +2,7 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_2.label": "Installer window fits its button",
     "changelog.1_1_2.entry.installer_button":
       "The installer window is now sized to its contents, so the Install button is no longer squeezed to a sliver at the bottom edge after the web UI port picker was added.",
     "changelog.1_1_1.label": "Stale library entries are cleaned up",
