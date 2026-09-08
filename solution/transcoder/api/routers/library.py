@@ -6,6 +6,7 @@ from transcoder.api import state
 from transcoder.api.deps import get_session
 from transcoder.api.schemas import JobOut, LibraryPage, LibraryStats, MediaItemOut, StatRow
 from transcoder.models import Job, MediaItem
+from transcoder.engine.reap import SUPERSEDED
 
 router = APIRouter(prefix="/api")
 
@@ -24,6 +25,11 @@ def list_library(
         query = query.filter(MediaItem.source == source)
     if eligibility:
         query = query.filter(MediaItem.eligibility == eligibility)
+    else:
+        # Superseded rows are dead file history, kept only because job rows
+        # reference them (see engine/reap.py). Hide them by default so the
+        # Library reads as current state; asking for them by name still works.
+        query = query.filter(MediaItem.eligibility != SUPERSEDED)
     if q:
         query = query.filter(MediaItem.title.ilike(f"%{q}%"))
     total = query.count()
