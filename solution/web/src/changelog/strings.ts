@@ -2,6 +2,8 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_2.entry.installer_button":
+      "The installer window is now sized to its contents, so the Install button is no longer squeezed to a sliver at the bottom edge after the web UI port picker was added.",
     "changelog.1_1_1.label": "Stale library entries are cleaned up",
     "changelog.1_1_1.entry.library_duplicates":
       "The Library no longer accumulates duplicate rows for episodes Sonarr has replaced, and a title whose file was upgraded or deleted no longer produces a failing job on every run. Each run now retires library entries whose file no longer exists in Sonarr; they remain visible under the new \"superseded\" filter.",

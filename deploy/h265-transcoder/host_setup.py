@@ -236,7 +236,6 @@ def run_gui(do_uninstall: bool) -> None:
 
     root = tk.Tk()
     root.title(f"{lib.APP_DISPLAY} — {'Uninstall' if do_uninstall else 'Setup'}")
-    root.geometry("640x460")
     try:
         import sv_ttk
         sv_ttk.set_theme("dark")
@@ -319,7 +318,6 @@ def run_gui(do_uninstall: bool) -> None:
         port_var.set(str(initial_port))  # triggers _check_port via the trace
 
     logbox = tk.Text(root, height=14, wrap="word")
-    logbox.pack(fill="both", expand=True, padx=16, pady=12)
     # Log strings flow through the queue; ("__done__", ok) signals completion so
     # the Tk thread (never the worker thread) updates the button.
     q: queue.Queue = queue.Queue()
@@ -364,8 +362,18 @@ def run_gui(do_uninstall: bool) -> None:
         run_btn.config(state="disabled")
         threading.Thread(target=worker, daemon=True).start()
 
+    # Packed BEFORE the log box on purpose. pack() hands out space in packing
+    # order, so whatever is packed last absorbs any shortfall -- and when this
+    # button was last it got squeezed to 3px tall. Reserving its slice first
+    # means the log area is what gives way instead.
     run_btn = ttk.Button(root, text=run_label, command=go)
-    run_btn.pack(pady=(0, 12))
+    run_btn.pack(side="bottom", pady=(0, 12))
+    logbox.pack(side="top", fill="both", expand=True, padx=16, pady=12)
+
+    # Fixed width, but let the height follow what the layout actually needs, so
+    # a new row or a larger system font can't push anything off the bottom.
+    root.update_idletasks()
+    root.geometry(f"640x{root.winfo_reqheight()}")
 
     drain()
     root.mainloop()
