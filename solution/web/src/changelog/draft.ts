@@ -4,5 +4,7 @@
 export const draft = {
   currentVersion: "1.1.0",
   nextVersion: "1.1.1",
-  entryKeys: [] as string[],
+  entryKeys: [
+    "changelog.1_1_1.entry.library_duplicates",
+  ] as string[],
 };

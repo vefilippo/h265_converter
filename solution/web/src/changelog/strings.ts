@@ -2,6 +2,8 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_1.entry.library_duplicates":
+      "The Library no longer accumulates duplicate rows for episodes Sonarr has replaced, and a title whose file was upgraded or deleted no longer produces a failing job on every run. Each run now retires library entries whose file no longer exists in Sonarr; they remain visible under the new \"superseded\" filter.",
     "changelog.1_1_0.label": "Encoder support and reliable restore",
     "changelog.1_1_0.entry.installer_port":
       "Choose the dashboard port during installation with a live availability check. The tray launcher respects the chosen port and waits for the server before opening the dashboard; fresh-install startup and occupied-port handling are also fixed.",
