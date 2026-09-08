@@ -24,6 +24,7 @@ const ELIGIBILITY_LABEL: Record<string, string> = {
   already_h265: "Already H.265",
   below_1080p: "Below 1080p",
   excluded: "Excluded",
+  superseded: "Superseded",
 };
 
 export default function Dashboard() {
