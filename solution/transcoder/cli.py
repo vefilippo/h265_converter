@@ -10,6 +10,7 @@ from transcoder.sonarr_client import SonarrClient
 from transcoder.radarr_client import RadarrClient
 from transcoder.engine.discovery import discover_sonarr, discover_radarr
 from transcoder.engine.queue import enqueue_eligible
+from transcoder.engine.reap import reap_orphans
 from transcoder.engine.worker import process_queue
 from transcoder.models import Job
 
@@ -69,6 +70,8 @@ def main() -> None:
         _discover(session, clients, args.app, args.scope, args.show, args.movie)
 
         if args.command == "run":
+            retired = reap_orphans(session, clients["sonarr"])
+            log.info("Reaped %s orphaned library item(s)", retired)
             created = enqueue_eligible(session,
                                       source=None if args.app == "all" else args.app)
             log.info("Enqueued %s jobs", created)

@@ -267,6 +267,7 @@ export default function Library() {
             <option value="already_h265">already_h265</option>
             <option value="below_1080p">below_1080p</option>
             <option value="excluded">excluded</option>
+            <option value="superseded">superseded</option>
           </select>
         </div>
       </div>

@@ -5,12 +5,23 @@ import re
 
 from transcoder.config import settings
 from transcoder.encoders import AUTO, CPU, FAMILIES, resolve_for_job
+from transcoder.engine.reap import SUPERSEDED
 from transcoder.repo import get_effective
 
 log = logging.getLogger("transcoder")
 from transcoder.convert import convert_with_handbrake, TranscodeCancelled
 from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclusion_key, utcnow
 from transcoder.sftp_client import download_file_via_sftp, upload_file_via_sftp
+
+
+_MISSING_FILE_MARKERS = ("no such file", "errno 2")
+
+
+def _source_file_missing(message: str) -> bool:
+    """True when an SFTP failure means the remote file is gone, as opposed to a
+    transient connection or auth problem (which must stay retryable)."""
+    lowered = (message or "").lower()
+    return any(marker in lowered for marker in _MISSING_FILE_MARKERS)
 
 
 def _sanitize(name: str) -> str:
@@ -103,7 +114,17 @@ def process_one_job(
             progress_cb=_progress_writer(session, job),
         )
         if isinstance(dl, dict) and dl.get("success") is False:
-            raise RuntimeError(f"download failed: {dl.get('message')}")
+            message = dl.get("message") or ""
+            if _source_file_missing(message):
+                # Sonarr replaced or deleted the file behind this item, so the
+                # media_item row is an orphan. engine/reap.py clears these in
+                # bulk, but only when the replacement left a DUPLICATE row for
+                # the episode; a deletion with no replacement leaves a lone row
+                # it cannot see. Retire it here so it stops being re-enqueued
+                # and failing on every subsequent run.
+                item.eligibility = SUPERSEDED
+                job_log(session, job, "Source file no longer exists; retiring library entry")
+            raise RuntimeError(f"download failed: {message}")
 
         original_size = os.path.getsize(tmp_file)
         out_name = _output_name(item)

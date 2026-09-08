@@ -36,8 +36,8 @@ python -m transcoder.cli queue                      # List job states
 cd solution
 python -m transcoder.api        # FastAPI + uvicorn on API_HOST:API_PORT (default 0.0.0.0:8765)
 ```
-Key endpoints: `GET /api/health`, `GET /api/library`, `GET /api/library/stats`,
-`POST /api/scan`, `GET /api/scan/status`, `POST /api/enqueue`, `GET /api/jobs` (paginated `limit`/`offset`, newest first; response includes whole-table `state_counts`),
+Key endpoints: `GET /api/health`, `GET /api/library` (hides `superseded` rows unless `eligibility=superseded` is asked for), `GET /api/library/stats` (counts every state, `superseded` included),
+`POST /api/scan`, `GET /api/scan/status` (a run's `detail` carries `reaped`), `POST /api/enqueue`, `GET /api/jobs` (paginated `limit`/`offset`, newest first; response includes whole-table `state_counts`),
 `POST /api/jobs/{id}/cancel`, `POST /api/jobs/{id}/retry`, `POST /api/jobs/delete` (bulk-delete terminal-state jobs by id list), `GET /api/jobs/{id}/logs`,
 `GET /api/exclusions`, `GET /api/status`, `GET /api/stream` (SSE), `GET /api/logs`,
 `POST /api/library/{id}/enqueue`,
@@ -185,7 +185,18 @@ exact element/selector to avoid mis-identifying the target.
 
 This is a video transcoding pipeline that converts media to H.265/HEVC. It queries Sonarr/Radarr APIs to find non-H.265 files, downloads them via SFTP, transcodes with HandBrake CLI, and uploads the result back for automatic re-import.
 
-**Flow:** Sonarr/Radarr API → `discovery` upserts `media_item` rows (eligibility = needs_transcode if non-H.265 ≥1080p) → `queue` creates `job` rows → `worker` drains jobs one at a time: SFTP download → HandBrakeCLI (with live progress) → if smaller: SFTP upload + manual import trigger; if larger: add `exclusion` row
+**Flow:** Sonarr/Radarr API → `discovery` upserts `media_item` rows (eligibility = needs_transcode if non-H.265 ≥1080p) → `reap` retires rows whose Sonarr episodeFile is gone → `queue` creates `job` rows → `worker` drains jobs one at a time: SFTP download → HandBrakeCLI (with live progress) → if smaller: SFTP upload + manual import trigger; if larger: add `exclusion` row
+
+**Orphaned rows:** `media_item` is keyed on `(source, external_id)` where
+`external_id` is Sonarr's *episodeFileId*. Sonarr mints a new one whenever the
+file behind an episode changes (its own quality upgrade, or our transcode being
+re-imported), so the row for the old id is orphaned — discovery walks Sonarr's
+*current* episodes and never visits that id again. Orphans duplicate the Library
+and, if left at `needs_transcode`, are re-enqueued and fail on download every
+run. `engine/reap.py` retires them to `eligibility = "superseded"` (marked, never
+deleted — `job` rows reference them); `GET /api/library` hides that state unless
+you ask for it by name. The worker retires an item itself when SFTP reports the
+source file missing, which covers the lone orphan a duplicate scan cannot see.
 
 **Key modules (`solution/transcoder/`):**
 - `cli.py` — thin entry point; `build_parser()` + `main()` dispatch the `scan`/`run`/`queue` commands
@@ -196,6 +207,7 @@ This is a video transcoding pipeline that converts media to H.265/HEVC. It queri
 - `migrate.py` — one-time import of legacy CSV/timestamp state into the DB
 - `engine/eligibility.py` — pure `compute_eligibility()` rule
 - `engine/discovery.py` — scans Sonarr/Radarr, upserts `media_item`s, advances the watermark
+- `engine/reap.py` — retires `media_item` rows whose Sonarr episodeFile no longer exists; only queries series that show a duplicated `(season, episode)`, and Sonarr's live set is authoritative for the whole series
 - `engine/queue.py` — turns eligible items into `queued` jobs (deduped)
 - `engine/worker.py` — serial worker: download → transcode → replace-or-exclude → cleanup
 - `encoders.py` — encoder family catalog, HandBrake capability probe (parses the

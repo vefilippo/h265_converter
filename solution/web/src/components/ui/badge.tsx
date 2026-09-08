@@ -76,6 +76,8 @@ export function eligibilityVariant(e: string): BadgeVariant {
     case "already_h265": return "neutral";
     case "below_1080p": return "queued";
     case "excluded": return "skipped";
+    // Retired file history, not an error -- the muted, inert treatment.
+    case "superseded": return "cancelled";
     default: return "neutral";
   }
 }

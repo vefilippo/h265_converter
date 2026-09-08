@@ -8,6 +8,7 @@ from transcoder.api.state import build_clients
 from transcoder.db import SessionLocal
 from transcoder.engine.discovery import discover_sonarr, discover_radarr
 from transcoder.engine.queue import enqueue_eligible
+from transcoder.engine.reap import reap_orphans
 
 router = APIRouter(prefix="/api")
 log = logging.getLogger("transcoder")
@@ -60,6 +61,10 @@ def _run_full(scope: str = "new"):
         try:
             detail["sonarr"] = discover_sonarr(session, clients["sonarr"], scope=scope)
             detail["radarr"] = discover_radarr(session, clients["radarr"])
+            # After discovery (which is what creates the second row for an
+            # episode Sonarr re-imported) and before enqueue (so a retired row
+            # is never queued one last time).
+            detail["reaped"] = reap_orphans(session, clients["sonarr"])
             detail["enqueued"] = enqueue_eligible(session)
         finally:
             session.close()
