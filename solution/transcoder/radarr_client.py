@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+from transcoder.arr_import import ImportNotQueued, pick_candidate, release_quality
 
 log = logging.getLogger("transcoder")
 
@@ -40,8 +41,8 @@ class RadarrClient:
                     "title": movie["title"],
                     "codec": video_codec or "unknown",
                     "path": movie_file.get("path", "unknown"),
-                    "resolution": movie_file.get("quality").get("quality").get("resolution"),
-                    "quality": movie_file.get("quality").get("quality").get("name"),
+                    "resolution": ((movie_file.get("quality") or {}).get("quality") or {}).get("resolution"),
+                    "quality": release_quality(movie_file.get("quality")),
                     "languages": languages,
                     "year": movie["year"],
                     "movie_id": movie["id"],
@@ -73,17 +74,7 @@ class RadarrClient:
                 timeout=30,
             )
             r1.raise_for_status()
-
-            candidates = [
-                c for c in r1.json()
-                if os.path.normcase(c["path"]) == os.path.normcase(radarr_path)
-                   and not c.get("rejections")
-            ]
-            if not candidates:
-                log.warning("Radarr did not recognise %s", radarr_path)
-                return
-
-            info = candidates[0]
+            info = pick_candidate(r1.json(), radarr_path, "Radarr")
             payload = {
                 "name": "ManualImport",
                 "importMode": "Move",
@@ -96,7 +87,6 @@ class RadarrClient:
                     "indexerFlags": info.get("indexerFlags"),
                 }]
             }
-
             r2 = requests.post(
                 f"{self.url}/api/v3/command",
                 headers={**self.headers, "Content-Type": "application/json"},
@@ -105,6 +95,9 @@ class RadarrClient:
             )
             r2.raise_for_status()
             log.info("Manual-import queued for %s", info['path'])
-
+        except ImportNotQueued:
+            raise
         except Exception as exc:
-            log.error("Manual-import failed for %s: %s", full_path_host, exc)
+            raise ImportNotQueued(
+                f"Radarr manual import failed for {radarr_path}: {exc}"
+            ) from exc

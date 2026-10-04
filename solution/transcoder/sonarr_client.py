@@ -7,6 +7,7 @@ from typing import List, Set, Tuple, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+from transcoder.arr_import import ImportNotQueued, pick_candidate, release_quality
 
 log = logging.getLogger("transcoder")
 
@@ -113,9 +114,8 @@ class SonarrClient:
 
     @staticmethod
     def extract_quality(episode_file: dict) -> str:
-        """Extract quality name (e.g. 'HDTV-1080p') from metadata."""
-        quality = episode_file.get("quality", {}).get("quality", {})
-        return quality.get("name", "Unknown Quality")
+        """Quality name plus revision tokens (e.g. 'WEBDL-1080p Proper')."""
+        return release_quality(episode_file.get("quality"))
 
     @staticmethod
     def is_h265_encoded(episode_file: dict) -> bool:
@@ -156,17 +156,7 @@ class SonarrClient:
                 timeout=30,
             )
             r1.raise_for_status()
-
-            candidates = [
-                c for c in r1.json()
-                if os.path.normcase(c["path"]) == os.path.normcase(sonarr_path)
-                   and not c.get("rejections")
-            ]
-            if not candidates:
-                log.warning("Sonarr did not recognise %s", sonarr_path)
-                return
-
-            info = candidates[0]
+            info = pick_candidate(r1.json(), sonarr_path, "Sonarr")
             payload = {
                 "name": "ManualImport",
                 "importMode": "Move",
@@ -190,6 +180,9 @@ class SonarrClient:
             )
             r2.raise_for_status()
             log.info("Manual-import queued for %s", info['path'])
-
+        except ImportNotQueued:
+            raise
         except Exception as exc:
-            log.error("Manual-import failed for %s: %s", full_path_host, exc)
+            raise ImportNotQueued(
+                f"Sonarr manual import failed for {sonarr_path}: {exc}"
+            ) from exc

@@ -185,7 +185,7 @@ exact element/selector to avoid mis-identifying the target.
 
 This is a video transcoding pipeline that converts media to H.265/HEVC. It queries Sonarr/Radarr APIs to find non-H.265 files, downloads them via SFTP, transcodes with HandBrake CLI, and uploads the result back for automatic re-import.
 
-**Flow:** Sonarr/Radarr API → `discovery` upserts `media_item` rows (eligibility = needs_transcode if non-H.265 ≥1080p) → `reap` retires rows whose Sonarr episodeFile is gone → `queue` creates `job` rows → `worker` drains jobs one at a time: SFTP download → HandBrakeCLI (with live progress) → if smaller: SFTP upload + manual import trigger; if larger: add `exclusion` row
+**Flow:** Sonarr/Radarr API → `discovery` upserts `media_item` rows (eligibility = needs_transcode if non-H.265 ≥1080p) → `reap` retires rows whose Sonarr episodeFile is gone → `queue` creates `job` rows → `worker` drains jobs one at a time: SFTP download → HandBrakeCLI (with live progress) → if smaller: SFTP upload + manual import trigger (a rejected or failed import raises `ImportNotQueued` and the job ends `failed` with the app's reason, never `done`); if larger: add `exclusion` row
 
 **Orphaned rows:** `media_item` is keyed on `(source, external_id)` where
 `external_id` is Sonarr's *episodeFileId*. Sonarr mints a new one whenever the
@@ -215,6 +215,7 @@ source file missing, which covers the lone orphan a duplicate scan cannot see.
 - `api/` — FastAPI service (Cycle 2): `app.py` (factory + lifespan), `deps.py`, `schemas.py`, `state.py` (worker controller + scan status singletons), `routers/` (library, scan, jobs, exclusions, stream/status), `auth.py` (single-password session login, `require_auth`). `worker_controller.py` runs the continuous background transcode worker (cancellable).
 - `web/` — React SPA (Cycle 3, Vite + Tailwind + shadcn-style primitives in `src/components/ui/`): `api/` client+types, `hooks/` (TanStack Query + SSE), `pages/` (Dashboard/Library/Jobs/Exclusions/Login), `auth/` (AuthGate). Built to `web/dist`, served by FastAPI. Data tables (Library/Jobs/Exclusions) use a shared `components/ui/data-table.tsx` (TanStack Table) that renders through the Tailwind `Table` primitives — columns are click-to-sort with `aria-sort`; Jobs defaults to the "When" column (`finished_at ?? started_at ?? created_at`) descending.
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
+- `arr_import.py` — shared by both clients: `release_quality()` renders quality + revision tokens (`Proper`, `REPACK<n>`, `REAL`) so the transcoded filename parses as the same revision as the original (dropping them made Radarr/Sonarr reject the re-import as a downgrade); `pick_candidate()` + `ImportNotQueued`
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
 - `sftp_client.py` — upload/download via Paramiko with tqdm progress bars
 - `history.py` — `_parse_iso_z()` ISO-8601 parsing (used by discovery for the watermark)
