@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+from transcoder.arr_import import release_quality
 
 log = logging.getLogger("transcoder")
 
@@ -40,8 +41,8 @@ class RadarrClient:
                     "title": movie["title"],
                     "codec": video_codec or "unknown",
                     "path": movie_file.get("path", "unknown"),
-                    "resolution": movie_file.get("quality").get("quality").get("resolution"),
-                    "quality": movie_file.get("quality").get("quality").get("name"),
+                    "resolution": ((movie_file.get("quality") or {}).get("quality") or {}).get("resolution"),
+                    "quality": release_quality(movie_file.get("quality")),
                     "languages": languages,
                     "year": movie["year"],
                     "movie_id": movie["id"],

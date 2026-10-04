@@ -7,6 +7,7 @@ from typing import List, Set, Tuple, Optional
 
 from transcoder.config import settings
 from transcoder.history import _parse_iso_z
+from transcoder.arr_import import release_quality
 
 log = logging.getLogger("transcoder")
 
@@ -113,9 +114,8 @@ class SonarrClient:
 
     @staticmethod
     def extract_quality(episode_file: dict) -> str:
-        """Extract quality name (e.g. 'HDTV-1080p') from metadata."""
-        quality = episode_file.get("quality", {}).get("quality", {})
-        return quality.get("name", "Unknown Quality")
+        """Quality name plus revision tokens (e.g. 'WEBDL-1080p Proper')."""
+        return release_quality(episode_file.get("quality"))
 
     @staticmethod
     def is_h265_encoded(episode_file: dict) -> bool:
