@@ -2,6 +2,11 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_3.label": "Transcodes of Proper releases are re-imported",
+    "changelog.1_1_3.entry.proper_reimport":
+      "Transcoded files keep the source's Proper/Repack tag, so Radarr and Sonarr accept them as replacements instead of rejecting them as a downgrade. Before, such titles were silently left on the original file and transcoded again on every run.",
+    "changelog.1_1_3.entry.import_failures":
+      "When Radarr or Sonarr refuses to import a transcoded file, the job is now marked failed with their reason instead of done, and it no longer counts toward space saved. A movie with no quality information no longer stops the Radarr scan.",
     "changelog.1_1_2.label": "Installer window fits its button",
     "changelog.1_1_2.entry.installer_button":
       "The installer window is now sized to its contents, so the Install button is no longer squeezed to a sliver at the bottom edge after the web UI port picker was added.",
