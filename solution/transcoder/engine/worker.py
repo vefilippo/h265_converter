@@ -14,14 +14,15 @@ from transcoder.models import Exclusion, Job, episode_exclusion_key, movie_exclu
 from transcoder.sftp_client import download_file_via_sftp, upload_file_via_sftp
 
 
-_MISSING_FILE_MARKERS = ("no such file", "errno 2")
+# "[Errno 2]" must match as a whole token: a bare substring check also matched
+# "[Errno 22] Invalid argument", a local write failure, and retired live items.
+_MISSING_FILE_RE = re.compile(r"no such file|\[errno 2\]")
 
 
 def _source_file_missing(message: str) -> bool:
     """True when an SFTP failure means the remote file is gone, as opposed to a
     transient connection or auth problem (which must stay retryable)."""
-    lowered = (message or "").lower()
-    return any(marker in lowered for marker in _MISSING_FILE_MARKERS)
+    return bool(_MISSING_FILE_RE.search((message or "").lower()))
 
 
 def _sanitize(name: str) -> str:

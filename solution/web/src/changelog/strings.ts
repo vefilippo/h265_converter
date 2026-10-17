@@ -2,6 +2,11 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_4.label": "Downloads work again after the tray restarts",
+    "changelog.1_1_4.entry.download_errno22":
+      "If the tray icon was closed or restarted while the server kept running, every download then failed with \"Invalid argument\". The server now writes its output to log/server_start.log itself, and downloads no longer depend on the tray being alive.",
+    "changelog.1_1_4.entry.no_false_retire":
+      "A local download error is no longer mistaken for a missing source file, so library entries are no longer hidden as superseded when the file is still there.",
     "changelog.1_1_3.label": "Transcodes of Proper releases are re-imported",
     "changelog.1_1_3.entry.proper_reimport":
       "Transcoded files keep the source's Proper/Repack tag, so Radarr and Sonarr accept them as replacements instead of rejecting them as a downgrade. Before, such titles were silently left on the original file and transcoded again on every run.",

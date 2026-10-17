@@ -217,10 +217,10 @@ source file missing, which covers the lone orphan a duplicate scan cannot see.
 - `sonarr_client.py` / `radarr_client.py` — API clients; `is_h265_encoded()` checks `customFormats` for "x265"
 - `arr_import.py` — shared by both clients: `release_quality()` renders quality + revision tokens (`Proper`, `REPACK<n>`, `REAL`) so the transcoded filename parses as the same revision as the original (dropping them made Radarr/Sonarr reject the re-import as a downgrade); `pick_candidate()` + `ImportNotQueued`
 - `convert.py` — HandBrake CLI wrapper; `parse_handbrake_progress()` + `progress_cb`; returns `(output_path, excluded_flag)`
-- `sftp_client.py` — upload/download via Paramiko with tqdm progress bars
+- `sftp_client.py` — upload/download via Paramiko; tqdm console bars are drawn only when stderr is a TTY (a dead tray pipe once made every write fail with `[Errno 22]` and abort the transfer)
 - `history.py` — `_parse_iso_z()` ISO-8601 parsing (used by discovery for the watermark)
 - `logging_setup.py` — leveled logging to console + rotating file (`log/api.log` for the server, `log/cli.log` for the CLI; 5 MB / 3 backups)
-- `tray.pyw` — Windows system tray launcher (pystray + Pillow): green/grey health icon, start/stop/open-UI menu, toast notifications on job done/failed/queue-clear (winotify); run via `scripts/tray.bat`
+- `tray.pyw` — Windows system tray launcher (pystray + Pillow): starts the server with stdout/stderr written straight to `log/server_start.log` (never a pipe, so the server survives the tray exiting); green/grey health icon, start/stop/open-UI menu, toast notifications on job done/failed/queue-clear (winotify); run via `scripts/tray.bat`
 
 **State** lives in a SQLite database (`solution/transcoder.db`): `media_item`, `job`,
 `exclusion`, `setting` tables. Legacy `excluded_*.csv` / `last_history_timestamp.txt` are
