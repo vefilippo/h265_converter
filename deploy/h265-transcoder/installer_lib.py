@@ -61,6 +61,23 @@ def venv_python(install_dir: str) -> str:
     return str(pathlib.Path(install_dir) / PAYLOAD_DIRNAME / ".venv" / "Scripts" / "python.exe")
 
 
+# Interpreters to build the venv from, best first. A bare "python" is often only
+# the Microsoft Store placeholder alias on Windows, so the py launcher wins.
+_BASE_PYTHONS = (["py", "-3"], ["python"])
+
+
+def base_python_argv(runs) -> list[str] | None:
+    """First interpreter prefix that actually runs, or None if none do.
+
+    ``runs(argv) -> bool`` reports whether a command exits 0; the caller owns
+    the subprocess so this stays pure.
+    """
+    for prefix in _BASE_PYTHONS:
+        if runs([*prefix, "-c", "import sys"]):
+            return list(prefix)
+    return None
+
+
 def setup_exe_path(install_dir: str) -> str:
     return str(pathlib.Path(install_dir) / SETUP_EXE)
 

@@ -60,6 +60,15 @@ def _run(argv, sink=None, cwd=None, check=True):
     return res
 
 
+def _runs(argv) -> bool:
+    """True when ``argv`` exits 0 (a missing executable counts as not running)."""
+    try:
+        return subprocess.run(argv, capture_output=True,
+                              creationflags=CREATE_NO_WINDOW).returncode == 0
+    except OSError:
+        return False
+
+
 # --- payload resolution: shipped exe vs dev checkout ---------------------------
 def bundled_payload() -> Path | None:
     """Return the bundled payload root (…/solution) if running as the frozen exe."""
@@ -110,8 +119,15 @@ def install(install_dir: str | None = None, port: int | None = None, sink=None) 
     _emit("[install] creating venv + installing deps …", sink)
     venv_py = Path(lib.venv_python(str(inst)))
     if not venv_py.exists():
-        _run([sys.executable if not is_frozen else "python", "-m", "venv",
-              str(payload / ".venv")], sink=sink)
+        if is_frozen:
+            base = lib.base_python_argv(_runs)
+            if base is None:
+                raise RuntimeError(
+                    "Python not found: install it from https://www.python.org "
+                    "(a bare 'python' may only be the Microsoft Store alias)")
+        else:
+            base = [sys.executable]
+        _run([*base, "-m", "venv", str(payload / ".venv")], sink=sink)
     _run([str(venv_py), "-m", "pip", "install", "--upgrade", "pip"], sink=sink)
     _run([str(venv_py), "-m", "pip", "install", "-r",
           str(payload / "requirements.txt")], sink=sink)

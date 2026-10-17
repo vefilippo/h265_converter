@@ -238,3 +238,27 @@ def test_upsert_env_var_duplicate_key_replaces_first_and_drops_rest():
     got = lib.upsert_env_var(text, "API_PORT", "9000")
     lines = got.splitlines()
     assert lines == ["API_PORT=9000", "SONARR_API_KEY=abc"]
+
+
+# --- base interpreter for building the venv -----------------------------------
+# On a fresh Windows box "python" is often only the Microsoft Store placeholder
+# alias (exit 9009, "Python was not found"); the py launcher reaches the real
+# install. The frozen installer must not assume a working bare "python".
+
+def test_base_python_prefers_the_py_launcher():
+    assert lib.base_python_argv(lambda argv: True) == ["py", "-3"]
+
+
+def test_base_python_falls_back_to_python_when_py_is_missing():
+    works = lambda argv: argv[0] == "python"
+    assert lib.base_python_argv(works) == ["python"]
+
+
+def test_base_python_is_none_when_nothing_runs():
+    assert lib.base_python_argv(lambda argv: False) is None
+
+
+def test_base_python_probes_with_a_runnable_command():
+    seen = []
+    lib.base_python_argv(lambda argv: seen.append(argv) or False)
+    assert seen == [["py", "-3", "-c", "import sys"], ["python", "-c", "import sys"]]
