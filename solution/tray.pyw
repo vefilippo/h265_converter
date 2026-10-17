@@ -41,11 +41,6 @@ logging.root.addHandler(_make_daily_handler(_LOG_DIR / "tray.log"))
 log = logging.getLogger("tray")
 log.info("tray.pyw starting")
 
-# Separate logger for server subprocess output — goes to server_start.log only.
-_srv_log = logging.getLogger("server_start")
-_srv_log.propagate = False
-_srv_log.setLevel(logging.INFO)
-_srv_log.addHandler(_make_daily_handler(_LOG_DIR / "server_start.log"))
 
 try:
     import pystray
@@ -256,11 +251,21 @@ def _open_ui(_icon, _item) -> None:
     webbrowser.open(BASE_URL)
 
 
-def _pipe_stream(stream, level: int) -> None:
-    for line in stream:
-        line = line.rstrip("\r\n")
-        if line:
-            _srv_log.log(level, line)
+def _archive_previous_output(path: pathlib.Path) -> None:
+    """Move the last run's server output to log/archive (one file per run).
+
+    Best effort: if a server that is still running holds the file open, the
+    rename fails and the file is simply overwritten.
+    """
+    if not path.exists():
+        return
+    stamp = time.strftime("%Y-%m-%d_%H%M%S", time.localtime(path.stat().st_mtime))
+    archive = _LOG_DIR / "archive"
+    try:
+        archive.mkdir(parents=True, exist_ok=True)
+        os.replace(path, archive / f"{path.name}.{stamp}")
+    except OSError as exc:
+        log.warning("Could not archive %s: %s", path, exc)
 
 
 def _start_server(_icon, _item) -> None:
@@ -272,18 +277,20 @@ def _start_server(_icon, _item) -> None:
     if _server_proc and _server_proc.poll() is None:
         return
     log.info("Starting server via %s", _VENV_PY)
-    _server_proc = subprocess.Popen(
-        [str(_VENV_PY), "-m", "transcoder.api"],
-        cwd=str(SOURCE_CODE_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=_NO_WINDOW,
-    )
-    threading.Thread(target=_pipe_stream, args=(_server_proc.stdout, logging.INFO), daemon=True).start()
-    threading.Thread(target=_pipe_stream, args=(_server_proc.stderr, logging.WARNING), daemon=True).start()
+    # The server's stdout/stderr go straight to a file the child holds itself.
+    # A pipe drained by this tray broke the server whenever the tray exited:
+    # the server keeps running, and every later write to stderr fails on
+    # Windows with "[Errno 22] Invalid argument" (aborting every SFTP download).
+    out_path = _LOG_DIR / "server_start.log"
+    _archive_previous_output(out_path)
+    with open(out_path, "w", encoding="utf-8") as out:
+        _server_proc = subprocess.Popen(
+            [str(_VENV_PY), "-m", "transcoder.api"],
+            cwd=str(SOURCE_CODE_DIR),
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            creationflags=_NO_WINDOW,
+        )
     # Wait for the server on a background thread so a slow or failed startup
     # (e.g. the port-taken refusal, or an import-time crash) never blocks the
     # pystray event loop -- _poll() follows the same "own thread" pattern.

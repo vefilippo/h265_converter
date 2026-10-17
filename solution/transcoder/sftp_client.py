@@ -1,5 +1,5 @@
 import logging
-import paramiko, os
+import paramiko, os, sys
 from pathlib import Path
 from tqdm import tqdm
 from pathlib import PureWindowsPath
@@ -7,6 +7,22 @@ from pathlib import PureWindowsPath
 from transcoder.config import settings
 
 log = logging.getLogger("transcoder")
+
+
+def _progress_bar(total, desc):
+    """Console progress bar, drawn only when stderr is an interactive terminal.
+
+    The server runs headless with stderr piped to the tray (or absent under
+    pythonw). If that pipe's reader dies, every write fails with
+    "[Errno 22] Invalid argument" and would abort the transfer itself.
+    """
+    stream = sys.stderr
+    try:
+        interactive = stream is not None and stream.isatty()
+    except (AttributeError, OSError, ValueError):
+        interactive = False
+    return tqdm(total=total, unit='B', unit_scale=True, desc=desc,
+                file=stream, disable=not interactive)
 
 
 class SftpClient:
@@ -42,7 +58,7 @@ def upload_file_via_sftp(host, port, username, password,
     
     try:
         file_size = Path(local_path).stat().st_size
-        progress_bar = tqdm(total=file_size, unit='B', unit_scale=True, desc="Uploading")
+        progress_bar = _progress_bar(file_size, "Uploading")
 
         def progress_callback(transferred, total):
             progress_bar.n = transferred
@@ -80,7 +96,7 @@ def download_file_via_sftp(host, port, username, password,
         
         file_size = sftp.stat(remote_path).st_size
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
-        progress_bar = tqdm(total=file_size, unit='B', unit_scale=True, desc="Downloading")
+        progress_bar = _progress_bar(file_size, "Downloading")
 
         def progress_callback(transferred, total):
             progress_bar.n = transferred

@@ -75,3 +75,15 @@ def test_transient_download_failure_leaves_the_item_eligible(session):
     assert job.state == "failed"
     assert item.eligibility == "needs_transcode"
     assert enqueue_eligible(session) == 1
+
+
+def test_local_einval_does_not_retire_the_item(session):
+    # "[Errno 22] Invalid argument" is a LOCAL write failure (e.g. a dead stderr
+    # pipe); it contains the substring "errno 2" but says nothing about the
+    # remote file, so the item must stay eligible.
+    item, job = _queued_job(session)
+
+    _run(session, job, "[Errno 22] Invalid argument")
+
+    assert job.state == "failed"
+    assert item.eligibility == "needs_transcode"
