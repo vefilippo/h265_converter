@@ -112,6 +112,95 @@ def delete_task_argv(task_name: str) -> list[str]:
     return ["schtasks", "/delete", "/tn", task_name, "/f"]
 
 
+def run_task_argv(task_name: str) -> list[str]:
+    return ["schtasks", "/run", "/tn", task_name]
+
+
+# --- in-place update ---------------------------------------------------------
+
+# Names in the payload dir that hold the user's state. An update replaces the
+# shipped code around them and never touches these, even if a future payload
+# were to ship one by mistake (user data is gitignored, so it normally isn't).
+USER_DATA = frozenset({
+    ".env", ".venv", "log", "out", "tmp", "secret_key",
+    "transcoder.db", "transcoder.db-wal", "transcoder.db-shm", "transcoder.db.bak",
+})
+
+DEFAULT_PORT = 8765
+
+
+def is_installed(install_dir: str) -> bool:
+    """True if install_dir already holds an installed payload."""
+    return (pathlib.Path(install_dir) / PAYLOAD_DIRNAME / "tray.pyw").is_file()
+
+
+def read_version(payload_dir: str) -> str | None:
+    """The payload's VERSION marker, or None if it has none."""
+    try:
+        return (pathlib.Path(payload_dir) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def read_env_port(text: str) -> int | None:
+    """API_PORT from .env-style text (first uncommented line), if it is valid."""
+    for line in text.splitlines():
+        m = _ENV_KEY_RE.match(line)
+        if m and not m.group(1) and m.group(2) == "API_PORT":
+            try:
+                port = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                return None
+            return port if 1024 <= port <= 65535 else None
+    return None
+
+
+def initial_port(existing_env: str | None, first_free) -> int:
+    """The port the wizard starts on.
+
+    On an update (``existing_env`` is the installed .env text, possibly empty)
+    keep the port the app already uses: it shows as "in use" only because the
+    app being updated holds it, and moving it would break bookmarks and the
+    Sonarr/Radarr webhook URLs. On a fresh install (``None``) pick the first
+    free port via ``first_free() -> int | None``.
+    """
+    if existing_env is not None:
+        return read_env_port(existing_env) or DEFAULT_PORT
+    return first_free() or DEFAULT_PORT
+
+
+def stale_code_entries(shipped: list[str], present: list[str]) -> list[str]:
+    """Top-level payload entries an update deletes before copying the new code.
+
+    Only names the NEW payload ships are removed (so files dropped from
+    transcoder/ or web/ since the last version don't linger), and never
+    anything in USER_DATA. Anything else in the dir is left as it is.
+    """
+    shipped_set = set(shipped)
+    return [name for name in present if name in shipped_set and name not in USER_DATA]
+
+
+def stop_app_ps(install_dir: str) -> str:
+    """PowerShell that stops THIS install's app and prints ``stopped=<n>``.
+
+    Matches pythonw/python/HandBrakeCLI whose command line contains install_dir
+    (a copy installed elsewhere, or a dev checkout, is never touched), then
+    kills each one's whole tree. The tree kill matters: the venv's pythonw.exe
+    is only a launcher, and the real interpreter and the server it spawns run
+    as base-Python children whose command line does not contain install_dir.
+    -like treats backslash literally, so the path is used as-is; only single
+    quotes need doubling inside the PowerShell string literal.
+    """
+    needle = install_dir.replace("'", "''")
+    return (
+        "$m = @(Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -in 'pythonw.exe','python.exe','HandBrakeCLI.exe' -and "
+        f"$_.CommandLine -like '*{needle}*' }}); "
+        "foreach ($p in $m) { taskkill /T /F /PID $p.ProcessId 2>&1 | Out-Null }; "
+        "Write-Output \"stopped=$($m.Count)\""
+    )
+
+
 def uninstall_registry_values(install_dir: str, version: str) -> dict:
     """Values for HKCU\\...\\Uninstall\\H265Transcoder (Add/Remove Programs)."""
     exe = setup_exe_path(install_dir)

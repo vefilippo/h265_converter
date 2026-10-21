@@ -262,3 +262,87 @@ def test_base_python_probes_with_a_runnable_command():
     seen = []
     lib.base_python_argv(lambda argv: seen.append(argv) or False)
     assert seen == [["py", "-3", "-c", "import sys"], ["python", "-c", "import sys"]]
+
+
+# --- in-place update ---------------------------------------------------------
+
+def _make_install(tmp_path, version="1.1.4"):
+    payload = tmp_path / "solution"
+    payload.mkdir()
+    (payload / "tray.pyw").write_text("")
+    (payload / "VERSION").write_text(version + "\n")
+    return tmp_path
+
+
+def test_is_installed_true_when_payload_has_tray(tmp_path):
+    assert lib.is_installed(str(_make_install(tmp_path))) is True
+
+
+def test_is_installed_false_for_empty_or_missing_dir(tmp_path):
+    assert lib.is_installed(str(tmp_path)) is False
+    assert lib.is_installed(str(tmp_path / "nope")) is False
+
+
+def test_read_version_strips_whitespace(tmp_path):
+    payload = _make_install(tmp_path, "1.1.4") / "solution"
+    assert lib.read_version(str(payload)) == "1.1.4"
+
+
+def test_read_version_none_when_absent(tmp_path):
+    assert lib.read_version(str(tmp_path)) is None
+
+
+def test_read_env_port_finds_uncommented_value():
+    text = "SONARR_URL=http://x\r\n# API_PORT=1111\r\nAPI_PORT = 8770\r\n"
+    assert lib.read_env_port(text) == 8770
+
+
+def test_read_env_port_none_when_missing_or_invalid():
+    assert lib.read_env_port("") is None
+    assert lib.read_env_port("# API_PORT=8770\n") is None
+    assert lib.read_env_port("API_PORT=abc\n") is None
+    assert lib.read_env_port("API_PORT=80\n") is None
+
+
+def test_update_initial_port_keeps_the_existing_install_port():
+    # The running app occupies its own port, so on an update "in use" is
+    # expected and must NOT push the wizard onto a different port.
+    assert lib.initial_port(existing_env="API_PORT=8770\n", first_free=lambda: 8771) == 8770
+
+
+def test_update_without_api_port_keeps_the_app_default():
+    assert lib.initial_port(existing_env="SONARR_URL=x\n", first_free=lambda: 8766) == 8765
+
+
+def test_fresh_install_initial_port_is_first_free():
+    assert lib.initial_port(existing_env=None, first_free=lambda: 8766) == 8766
+    assert lib.initial_port(existing_env=None, first_free=lambda: None) == 8765
+
+
+def test_stale_code_entries_are_only_what_the_new_payload_ships():
+    shipped = ["transcoder", "web", "tray.pyw", "requirements.txt", "VERSION", ".env.example"]
+    present = ["transcoder", "web", "tray.pyw", "requirements.txt", "VERSION", ".env.example",
+               ".env", ".venv", "log", "out", "tmp", "transcoder.db", "transcoder.db-wal",
+               "transcoder.db.bak", "secret_key", "excluded_tv.csv.migrated"]
+    assert sorted(lib.stale_code_entries(shipped, present)) == sorted(shipped)
+
+
+def test_stale_code_entries_never_include_user_data_even_if_shipped():
+    # Belt and braces: user data is gitignored so it is never shipped, but if
+    # one of these names ever were, an update must still leave it alone.
+    shipped = [".env", ".venv", "log", "transcoder.db", "secret_key", "transcoder"]
+    present = shipped
+    assert lib.stale_code_entries(shipped, present) == ["transcoder"]
+
+
+def test_stop_app_script_kills_whole_process_trees():
+    # The venv's pythonw.exe is a launcher: the real interpreter (and the
+    # server it spawns) run as base-Python children whose command line does
+    # NOT contain the install dir, so matching alone misses the server.
+    ps = lib.stop_app_ps(r"C:\Users\me\AppData\Local\H265Transcoder")
+    assert "taskkill" in ps and "/T" in ps and "/F" in ps
+    assert r"*C:\Users\me\AppData\Local\H265Transcoder*" in ps
+
+
+def test_start_task_argv():
+    assert lib.run_task_argv("H265Transcoder") == ["schtasks", "/run", "/tn", "H265Transcoder"]

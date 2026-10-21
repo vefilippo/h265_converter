@@ -241,7 +241,10 @@ the payload from `git ls-files -- solution` (whitelist — secrets are gitignore
 they can't leak), builds the web UI, generates an icon, and freezes `host_setup.py`
 with PyInstaller (`--onefile --windowed --uac-admin`). `installer_lib.py` holds the
 pure, unit-tested helpers; `host_setup.py` is the live GUI/subprocess/registry I/O
-(also `--uninstall`). See `deploy/h265-transcoder/README.md`.
+(also `--uninstall`). Running setup over an existing install is an in-place
+**update**: stop the app, swap only the shipped code, keep user data
+(`installer_lib.USER_DATA`: `.env`, db, logs, venv) and the installed port, restart
+if it was running. See `deploy/h265-transcoder/README.md`.
 
 ## External Dependencies
 
