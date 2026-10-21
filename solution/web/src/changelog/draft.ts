@@ -2,7 +2,7 @@
 // `cut-release` moves them into data.ts + strings.ts, then resets this file and
 // bumps currentVersion/nextVersion.
 export const draft = {
-  currentVersion: "1.1.4",
-  nextVersion: "1.1.5",
+  currentVersion: "1.1.5",
+  nextVersion: "1.1.6",
   entryKeys: [] as string[],
 };
