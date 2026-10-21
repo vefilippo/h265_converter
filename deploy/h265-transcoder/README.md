@@ -10,8 +10,17 @@ Windows-installer deploy shape, not Docker).
 Extract the bundled `solution/` payload → `%LOCALAPPDATA%\H265Transcoder\solution`,
 build the venv + install deps, register the `H265Transcoder` at-logon scheduled
 task (`/rl highest`, current user — GPU + network-share access), create a desktop
-shortcut, and add an Add/Remove Programs entry. Re-running upgrades in place
-(overlay copy refreshes code, keeps the venv + `.env`). `--uninstall` reverses it.
+shortcut, and add an Add/Remove Programs entry. `--uninstall` reverses it.
+
+**Updating:** running a newer setup over an existing install updates it in place.
+The wizard detects it (shows "vOLD → vNEW", button reads **Update**) and keeps the
+web UI port from the installed `.env` instead of picking a free one. It then stops
+this install's app (process trees matched by install dir — the venv `pythonw.exe`
+is only a launcher, so the real tray/server are its children), deletes the
+top-level entries the new payload ships (`transcoder\`, `web\`, `tray.pyw`, …) so
+removed files don't linger, copies the new payload, refreshes deps, and restarts
+the app if it was running. User data is never touched: `.env`, `.venv`, `log\`,
+`out\`, `tmp\`, `secret_key`, `transcoder.db*` (`installer_lib.USER_DATA`).
 
 **Prerequisites on the target (not bundled):** Python 3.10+, HandBrake CLI, an
 NVIDIA GPU for NVENC. The prebuilt web UI *is* bundled.

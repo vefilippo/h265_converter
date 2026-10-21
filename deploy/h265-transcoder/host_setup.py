@@ -16,17 +16,18 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import installer_lib as lib
 
 CREATE_NO_WINDOW = 0x08000000
 DETACHED_PROCESS = 0x00000008
-VERSION = "1.0.0"
 
 # --- output sink (NEVER bare print(): --windowed builds have no stdout) --------
 _LOG_FILE = Path(os.environ.get("TEMP", ".")) / "h265-transcoder-setup.log"
@@ -79,6 +80,23 @@ def bundled_payload() -> Path | None:
     return cand if (cand / "tray.pyw").exists() else None
 
 
+def _bundled_version() -> str | None:
+    src = bundled_payload() or dev_checkout_payload()
+    return lib.read_version(str(src)) if src else None
+
+
+def _existing_env(install_dir: str) -> str | None:
+    """The installed .env text ("" if it has none), or None if not installed."""
+    if not lib.is_installed(install_dir):
+        return None
+    try:
+        with open(Path(lib.payload_root(install_dir)) / ".env", "r",
+                  encoding="utf-8", newline="") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
 def dev_checkout_payload() -> Path | None:
     """When run as host_setup.py from the repo, use the checkout in place."""
     repo_root = Path(__file__).resolve().parent.parent.parent
@@ -95,13 +113,27 @@ def install(install_dir: str | None = None, port: int | None = None, sink=None) 
 
     _emit(f"[install] target: {inst}", sink)
     inst.mkdir(parents=True, exist_ok=True)
+    payload = inst / lib.PAYLOAD_DIRNAME
+
+    # An existing install is UPDATED in place: stop it, swap the code, keep the
+    # user's data (.env, db, logs, venv), and restart it if it was running.
+    updating = lib.is_installed(str(inst))
+    was_running = False
+    if updating:
+        old = lib.read_version(str(payload)) or "unknown"
+        new = lib.read_version(str(payload_src)) if is_frozen else None
+        _emit(f"[update] existing install v{old} found → v{new or '?'}; "
+              "stopping the app …", sink)
+        was_running = _stop_app(install_dir, sink)
 
     if is_frozen:
+        if updating:
+            _remove_stale_code(payload_src, payload, sink)
         # _MEIPASS is a temp dir wiped on exit — copy the payload to the
         # persistent install dir first, then build the venv there. Overlay
         # (dirs_exist_ok) refreshes code on re-run while keeping venv + .env.
         _emit("[install] copying payload …", sink)
-        shutil.copytree(payload_src, inst / lib.PAYLOAD_DIRNAME, dirs_exist_ok=True)
+        shutil.copytree(payload_src, payload, dirs_exist_ok=True)
         # Copy the running exe in so UninstallString points at a stable file.
         try:
             shutil.copy2(sys.executable, lib.setup_exe_path(str(inst)))
@@ -110,8 +142,6 @@ def install(install_dir: str | None = None, port: int | None = None, sink=None) 
     else:
         dev = dev_checkout_payload()
         _emit(f"[install] dev mode — using checkout in place: {dev}", sink)
-
-    payload = inst / lib.PAYLOAD_DIRNAME
 
     if port is not None:
         _write_env_port(payload, port, sink)
@@ -141,9 +171,36 @@ def install(install_dir: str | None = None, port: int | None = None, sink=None) 
         _create_shortcut(str(inst), sink)
         _write_uninstall_registry(str(inst), sink)
 
-    _emit("[install] done. The tray + server start at next logon "
-          "(start now: schtasks /run /tn H265Transcoder).", sink)
+    if was_running:
+        _emit("[update] restarting the app …", sink)
+        _run(lib.run_task_argv(lib.TASK_NAME), sink=sink, check=False)
+        _emit("[install] done.", sink)
+    else:
+        _emit("[install] done. The tray + server start at next logon "
+              "(start now: schtasks /run /tn H265Transcoder).", sink)
     return str(inst)
+
+
+def _remove_stale_code(payload_src: Path, payload: Path, sink=None) -> None:
+    """Delete the old code the new payload replaces, so files removed upstream
+    don't linger. User data (lib.USER_DATA) is never touched."""
+    shipped = [p.name for p in payload_src.iterdir()]
+    present = [p.name for p in payload.iterdir()] if payload.is_dir() else []
+    for name in lib.stale_code_entries(shipped, present):
+        target = payload / name
+        # A just-killed process can hold a handle for a moment: retry briefly.
+        for attempt in range(10):
+            try:
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink(missing_ok=True)
+                break
+            except OSError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.5)
+    _emit("[update] removed the previous version's code (data kept)", sink)
 
 
 def _write_env_port(payload: Path, port: int, sink=None) -> None:
@@ -179,7 +236,8 @@ def _create_shortcut(install_dir: str, sink=None) -> None:
 
 def _write_uninstall_registry(install_dir: str, sink=None) -> None:
     import winreg
-    vals = lib.uninstall_registry_values(install_dir, VERSION)
+    version = lib.read_version(lib.payload_root(install_dir)) or "0.0.0"
+    vals = lib.uninstall_registry_values(install_dir, version)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, lib.UNINSTALL_KEY) as key:
         for name, val in vals.items():
             if isinstance(val, int):
@@ -214,20 +272,18 @@ def uninstall(install_dir: str | None = None, sink=None) -> None:
     _emit("[uninstall] done.", sink)
 
 
-def _stop_app(install_dir: str, sink=None) -> None:
-    """Stop only THIS install's processes — the tray (pythonw), the server
-    (python -m transcoder.api) and any HandBrakeCLI child — matched by the
-    install dir in their command line, so a copy installed elsewhere (or a dev
-    checkout) is never touched. Runs elevated under --uac-admin, so it can also
-    stop the GPU/HandBrake child the at-logon (/rl highest) task spawned."""
-    needle = install_dir.replace("\\", "\\\\")
-    ps = (
-        "Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -in 'pythonw.exe','python.exe','HandBrakeCLI.exe' -and "
-        "$_.CommandLine -like '*%s*' } | ForEach-Object { "
-        "Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    ) % needle
-    _run(["powershell", "-NoProfile", "-Command", ps], sink=sink, check=False)
+def _stop_app(install_dir: str, sink=None) -> bool:
+    """Stop only THIS install's processes (tray, server, HandBrakeCLI) and
+    their children; see lib.stop_app_ps. Runs elevated under --uac-admin, so it
+    can also stop what the at-logon (/rl highest) task spawned. Returns True
+    if anything was running."""
+    res = _run(["powershell", "-NoProfile", "-Command", lib.stop_app_ps(install_dir)],
+               sink=sink, check=False)
+    m = re.search(r"stopped=(\d+)", res.stdout or "")
+    stopped = bool(m and int(m.group(1)))
+    if stopped:
+        time.sleep(1.0)  # let the killed processes release their file handles
+    return stopped
 
 
 def _schedule_self_delete(install_dir: str, sink=None) -> None:
@@ -258,18 +314,33 @@ def run_gui(do_uninstall: bool) -> None:
     except Exception:
         pass  # plain ttk if the theme data wasn't bundled
 
-    intro = (
-        "⚠  This permanently removes H.265 Transcoder AND ALL ITS DATA from\n"
-        f"    {lib.default_install_dir()}\n\n"
-        "Deleted for good: the database (job history, exclusions, settings),\n"
-        "your .env credentials, and all logs. This cannot be undone."
-        if do_uninstall else
+    install_intro = (
         "Installs H.265 Transcoder for the current user.\n\n"
         "Requires (not bundled): Python 3.10+, HandBrake CLI, and an NVIDIA GPU "
         "for NVENC. The service starts automatically at logon, on the web UI "
         "port you choose below."
     )
-    ttk.Label(root, text=intro, wraplength=600, justify="left").pack(padx=16, pady=12, anchor="w")
+
+    def update_intro(install_dir: str) -> str:
+        old = lib.read_version(lib.payload_root(install_dir)) or "unknown"
+        new = _bundled_version() or "?"
+        return (
+            f"H.265 Transcoder v{old} is already installed here; it will be "
+            f"updated to v{new}.\n\n"
+            "The app is stopped, its code replaced, and it is restarted if it "
+            "was running. Your settings, .env credentials, database (job "
+            "history, exclusions) and logs are kept."
+        )
+
+    intro_var = tk.StringVar(value=(
+        "⚠  This permanently removes H.265 Transcoder AND ALL ITS DATA from\n"
+        f"    {lib.default_install_dir()}\n\n"
+        "Deleted for good: the database (job history, exclusions, settings),\n"
+        "your .env credentials, and all logs. This cannot be undone."
+        if do_uninstall else install_intro
+    ))
+    ttk.Label(root, textvariable=intro_var, wraplength=600, justify="left").pack(
+        padx=16, pady=12, anchor="w")
 
     dir_var = tk.StringVar(value=lib.default_install_dir())
     port_var = tk.StringVar()
@@ -281,7 +352,7 @@ def run_gui(do_uninstall: bool) -> None:
                    command=lambda: dir_var.set(filedialog.askdirectory() or dir_var.get())
                    ).pack(side="left")
 
-        DEFAULT_PORT = 8765
+        DEFAULT_PORT = lib.DEFAULT_PORT
 
         port_row = ttk.Frame(root); port_row.pack(fill="x", padx=16, pady=(8, 0))
         ttk.Label(port_row, text="Web UI port:").pack(side="left")
@@ -315,23 +386,42 @@ def run_gui(do_uninstall: bool) -> None:
             if free:
                 port_status_var.set("  ● free")
                 port_status_label.config(foreground="green")
+            elif lib.is_installed(dir_var.get()):
+                # Expected: the app being updated holds its own port.
+                port_status_var.set("  ● in use by the installed app")
+                port_status_label.config(foreground="green")
             else:
                 port_status_var.set("  ● in use")
                 port_status_label.config(foreground="orange")
 
         port_var.trace_add("write", _check_port)
 
-        try:
-            initial_port = lib.first_free_port()
-        except Exception:
-            initial_port = None
-        if initial_port is None:
-            initial_port = DEFAULT_PORT
-        if initial_port != DEFAULT_PORT:
-            port_hint_var.set(
-                f"ℹ {DEFAULT_PORT} was in use, so {initial_port} was selected for you."
-            )
-        port_var.set(str(initial_port))  # triggers _check_port via the trace
+        def _first_free():
+            try:
+                return lib.first_free_port()
+            except Exception:
+                return None
+
+        def _apply_mode(*_args) -> None:
+            """Switch between fresh install and in-place update for the dir."""
+            install_dir = dir_var.get()
+            existing_env = _existing_env(install_dir)
+            if existing_env is not None:
+                intro_var.set(update_intro(install_dir))
+                run_btn.config(text="Update")
+            else:
+                intro_var.set(install_intro)
+                run_btn.config(text="Install")
+            initial = lib.initial_port(existing_env, _first_free)
+            if existing_env is None and initial != DEFAULT_PORT:
+                port_hint_var.set(
+                    f"ℹ {DEFAULT_PORT} was in use, so {initial} was selected for you."
+                )
+            else:
+                port_hint_var.set("")
+            port_var.set(str(initial))  # triggers _check_port via the trace
+
+        dir_var.trace_add("write", _apply_mode)
 
     logbox = tk.Text(root, height=14, wrap="word")
     # Log strings flow through the queue; ("__done__", ok) signals completion so
@@ -346,7 +436,7 @@ def run_gui(do_uninstall: bool) -> None:
                 if item[1]:  # success → offer a real Close button (no more "stuck")
                     run_btn.config(text="Close", state="normal", command=root.destroy)
                 else:        # failure → re-enable so the user can retry
-                    run_btn.config(text=run_label, state="normal", command=go)
+                    run_btn.config(state="normal", command=go)
             else:
                 logbox.insert("end", item + "\n")
                 logbox.see("end")
@@ -385,6 +475,9 @@ def run_gui(do_uninstall: bool) -> None:
     run_btn = ttk.Button(root, text=run_label, command=go)
     run_btn.pack(side="bottom", pady=(0, 12))
     logbox.pack(side="top", fill="both", expand=True, padx=16, pady=12)
+
+    if not do_uninstall:
+        _apply_mode()  # needs run_btn; sets the intro, button label and port
 
     # Fixed width, but let the height follow what the layout actually needs, so
     # a new row or a larger system font can't push anything off the bottom.

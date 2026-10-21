@@ -2,6 +2,9 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_6.label": "Setup updates an existing install",
+    "changelog.1_1_6.entry.installer_update":
+      "Running a newer setup over an existing install now updates it in place: the app is stopped, its code replaced and it is restarted, while your settings, credentials, database, logs and web UI port are kept. Uninstall also stops the running app reliably now.",
     "changelog.1_1_5.label": "NVIDIA NVENC is detected again",
     "changelog.1_1_5.entry.nvenc_detection":
       "Encoder detection now recognises HandBrake versions that report NVENC together with its version number. Before, Settings wrongly warned that NVIDIA NVENC was not available and Auto could never choose it.",
