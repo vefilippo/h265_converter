@@ -2,6 +2,9 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_5.label": "NVIDIA NVENC is detected again",
+    "changelog.1_1_5.entry.nvenc_detection":
+      "Encoder detection now recognises HandBrake versions that report NVENC together with its version number. Before, Settings wrongly warned that NVIDIA NVENC was not available and Auto could never choose it.",
     "changelog.1_1_4.label": "Downloads work again after the tray restarts",
     "changelog.1_1_4.entry.download_errno22":
       "If the tray icon was closed or restarted while the server kept running, every download then failed with \"Invalid argument\". The server now writes its output to log/server_start.log itself, and downloads no longer depend on the tray being alive.",

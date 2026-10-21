@@ -33,8 +33,27 @@ SILENT_ON_NVENC_BANNER = """[10:00:00] vcn: is available
 """
 
 
+# Captured verbatim from HandBrakeCLI 1.9.2 on a Ryzen 9 4900H (Radeon iGPU) +
+# RTX 2060 laptop: the real NVENC positive line carries the SDK version.
+NVIDIA_VERSIONED_BANNER = """[23:26:03] Compile-time hardening features are enabled
+[23:26:03] nvenc: version 13.1 is available
+[23:26:03] nvdec: is available
+[23:26:03] CUDA Version: 7.5
+[23:26:03] vcn: is available
+[23:26:03] qsv: not available on this system
+[23:26:03] hb_init: starting libhb thread
+[23:26:03] thread 2 started ("libhb")
+HandBrake 1.9.2
+"""
+
+
 def test_parse_nvidia_banner():
     assert parse_capabilities(NVIDIA_BANNER) == {"nvenc", CPU}
+
+
+def test_parse_nvidia_banner_with_version():
+    assert parse_capabilities(NVIDIA_VERSIONED_BANNER) == {"nvenc", "vcn", CPU}
+    assert parse_unavailable(NVIDIA_VERSIONED_BANNER) == {"qsv"}
 
 
 def test_parse_intel_banner():

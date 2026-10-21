@@ -8,6 +8,12 @@ export interface RawRelease {
 // Newest first. Entries are i18n keys (resolved via ./strings), never literal text.
 export const releases: RawRelease[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-21",
+    labelKey: "changelog.1_1_5.label",
+    entryKeys: ["changelog.1_1_5.entry.nvenc_detection"],
+  },
+  {
     version: "1.1.4",
     date: "2026-10-17",
     labelKey: "changelog.1_1_4.label",
