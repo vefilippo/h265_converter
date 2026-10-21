@@ -346,3 +346,15 @@ def test_stop_app_script_kills_whole_process_trees():
 
 def test_start_task_argv():
     assert lib.run_task_argv("H265Transcoder") == ["schtasks", "/run", "/tn", "H265Transcoder"]
+
+
+def test_installer_modules_compile_without_syntax_warnings():
+    # build.bat runs these under Python 3.12+, where an invalid escape such as
+    # "\ " in a docstring prints a SyntaxWarning into the build output.
+    import warnings
+    here = pathlib.Path(__file__).resolve().parent.parent
+    for name in ("installer_lib.py", "host_setup.py"):
+        src = (here / name).read_text(encoding="utf-8")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile(src, name, "exec")

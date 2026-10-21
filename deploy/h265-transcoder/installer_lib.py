@@ -1,4 +1,4 @@
-"""Pure, side-effect-free helpers for the H.265 Transcoder Windows installer.
+r"""Pure, side-effect-free helpers for the H.265 Transcoder Windows installer.
 
 Everything here is unit-testable without Windows, a GUI, or subprocess/registry
 access (see tests/test_installer_lib.py). The live I/O — running schtasks,
