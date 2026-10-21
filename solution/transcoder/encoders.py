@@ -70,8 +70,10 @@ AUTO_PRIORITY: tuple[str, ...] = ("vcn", "nvenc", "qsv", "cpu")
 # absence-means-unavailable parser would silently divert every NVIDIA user onto
 # an hours-long CPU x265 encode (resolve() substitutes on "known unavailable").
 # Under-detection must cost us a missing checkmark, never a substitution.
+# NVENC's real positive line carries the SDK version ("nvenc: version 13.1 is
+# available", HandBrake 1.9.2 on an RTX 2060), so an optional version is allowed.
 _AVAILABLE_RE = re.compile(
-    r"^\s*(?:\[[\d:]+\]\s*)?(vcn|nvenc|qsv):\s*is available\s*$",
+    r"^\s*(?:\[[\d:]+\]\s*)?(vcn|nvenc|qsv):\s*(?:version\s+\S+\s+)?is available\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 
