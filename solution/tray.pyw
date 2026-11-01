@@ -54,6 +54,10 @@ except ImportError as exc:
 
 SOURCE_CODE_DIR = pathlib.Path(__file__).parent
 
+# The logon scheduled task sets no working directory, and .env, the DB and the
+# output folders are all cwd-relative, so anchor the cwd before reading config.
+os.chdir(SOURCE_CODE_DIR)
+
 try:
     # Safe to import: transcoder.config is pure pydantic-settings (reads .env),
     # and transcoder/__init__.py has no side effects. It does NOT touch the

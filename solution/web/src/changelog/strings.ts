@@ -2,6 +2,9 @@ export type Locale = "en";
 
 export const strings: Record<Locale, Record<string, string>> = {
   en: {
+    "changelog.1_1_7.label": "Tray no longer reports a false startup failure",
+    "changelog.1_1_7.entry.tray_custom_port":
+      "When the app used a port other than 8765 and started at logon, the tray checked the wrong port: it reported \"Server failed to start\", stayed grey, and refused to open the UI even though the server was running. The tray now always reads the configured port.",
     "changelog.1_1_6.label": "Setup updates an existing install",
     "changelog.1_1_6.entry.installer_update":
       "Running a newer setup over an existing install now updates it in place: the app is stopped, its code replaced and it is restarted, while your settings, credentials, database, logs and web UI port are kept. Uninstall also stops the running app reliably now.",
