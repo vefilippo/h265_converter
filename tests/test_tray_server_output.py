@@ -20,7 +20,9 @@ _TRAY = pathlib.Path(__file__).resolve().parents[1] / "solution" / "tray.pyw"
 
 
 @pytest.fixture
-def tray():
+def tray(monkeypatch):
+    # tray.pyw chdirs at import; registering the current cwd restores it on teardown.
+    monkeypatch.chdir(pathlib.Path.cwd())
     before = list(logging.root.handlers)
     loader = importlib.machinery.SourceFileLoader("tray_under_test", str(_TRAY))
     spec = importlib.util.spec_from_loader(loader.name, loader)
